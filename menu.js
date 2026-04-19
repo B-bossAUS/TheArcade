@@ -250,7 +250,86 @@ function showMenu() {
   if (menuAnimFrame) cancelAnimationFrame(menuAnimFrame);
   menuAnimFrame = null;
   menuFrame = 0;
+  hideTouchControls();
   drawMenuFrame();
 }
 
-window.addEventListener('load', showMenu);
+// ── Responsive canvas sizing ──
+function resizeCanvas() {
+  const tc = document.getElementById('touch-controls');
+  const tcH = tc && tc.style.display !== 'none' ? (tc.offsetHeight || 100) : 0;
+  const avW = window.innerWidth;
+  const avH = window.innerHeight - tcH;
+  const aspect = 2; // 800/400
+
+  let w = avW, h = avW / aspect;
+  if (h > avH) { h = avH; w = h * aspect; }
+
+  canvas.style.width  = Math.floor(w) + 'px';
+  canvas.style.height = Math.floor(h) + 'px';
+}
+
+window.addEventListener('resize', resizeCanvas);
+
+// ── Touch device detection ──
+const isTouchDevice = ('ontouchstart' in window) || navigator.maxTouchPoints > 0;
+
+// ── Touch controls visibility ──
+function showTouchControls(mode) {
+  const tc    = document.getElementById('touch-controls');
+  const left  = document.getElementById('tc-left');
+  const right = document.getElementById('tc-right');
+  const jump  = document.getElementById('tc-jump');
+  const show  = isTouchDevice && mode !== 'none';
+  tc.style.display    = show ? 'flex' : 'none';
+  left.style.display  = show ? 'flex' : 'none';
+  right.style.display = show ? 'flex' : 'none';
+  jump.style.display  = (show && mode === 'platformer') ? 'flex' : 'none';
+  setTimeout(resizeCanvas, 10);
+}
+
+function hideTouchControls() {
+  document.getElementById('touch-controls').style.display = 'none';
+  resizeCanvas();
+}
+
+// ── Synthetic key events from touch buttons ──
+function fakeKey(code, down) {
+  document.dispatchEvent(new KeyboardEvent(down ? 'keydown' : 'keyup', { code, bubbles: true }));
+}
+
+// ── Init everything on load ──
+window.addEventListener('load', () => {
+  // Wire touch buttons
+  [['tc-left', 'ArrowLeft'], ['tc-right', 'ArrowRight'], ['tc-jump', 'Space']].forEach(([id, code]) => {
+    const el = document.getElementById(id);
+    el.addEventListener('touchstart',  (e) => { e.preventDefault(); fakeKey(code, true);  }, { passive: false });
+    el.addEventListener('touchend',    (e) => { e.preventDefault(); fakeKey(code, false); }, { passive: false });
+    el.addEventListener('touchcancel', (e) => { e.preventDefault(); fakeKey(code, false); }, { passive: false });
+  });
+
+  // Menu card tap (faster than click on mobile)
+  canvas.addEventListener('touchstart', (e) => {
+    if (!menuAnimFrame) return;
+    e.preventDefault();
+    const t = e.touches[0];
+    const r = canvas.getBoundingClientRect();
+    const mx = (t.clientX - r.left) * (canvas.width  / r.width);
+    const my = (t.clientY - r.top)  * (canvas.height / r.height);
+    GAMES.forEach((game, i) => {
+      const { x, y, w, h } = getCardBounds(i);
+      if (mx >= x && mx <= x + w && my >= y - 10 && my <= y + h) {
+        cancelAnimationFrame(menuAnimFrame);
+        menuAnimFrame = null;
+        hoveredCard = -1;
+        game.game().start();
+      }
+    });
+  }, { passive: false });
+
+  // Prevent body scroll during touch on canvas
+  canvas.addEventListener('touchmove', (e) => e.preventDefault(), { passive: false });
+
+  resizeCanvas();
+  showMenu();
+});

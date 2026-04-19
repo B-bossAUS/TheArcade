@@ -2,11 +2,23 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
   <title>Arcade</title>
   <link rel="stylesheet" href="style.css" />
 </head>
 <body>
-  <canvas id="gameCanvas" width="800" height="400"></canvas>
+  <div id="game-wrapper">
+    <canvas id="gameCanvas" width="800" height="400"></canvas>
+  </div>
+  <div id="touch-controls">
+    <div id="tc-dpad">
+      <button class="tc-btn" id="tc-left">◀</button>
+      <button class="tc-btn" id="tc-right">▶</button>
+    </div>
+    <div id="tc-actions">
+      <button class="tc-btn tc-jump" id="tc-jump">JUMP</button>
+    </div>
+  </div>
   <script src="menu.js"></script>
   <script src="game.js"></script>
   <script src="shooter.js"></script>

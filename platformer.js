@@ -680,6 +680,7 @@ const Platformer = (() => {
 
   function start() {
     keys = {};
+    showTouchControls('platformer');
     document.addEventListener('keydown', onKeyDown);
     document.addEventListener('keyup', onKeyUp);
     initGame();
@@ -690,6 +691,7 @@ const Platformer = (() => {
     if (animFrame) { cancelAnimationFrame(animFrame); animFrame = null; }
     document.removeEventListener('keydown', onKeyDown);
     document.removeEventListener('keyup', onKeyUp);
+    hideTouchControls();
     keys = {};
   }
 

@@ -277,10 +277,14 @@ const GeometryDash = (() => {
     animFrame = requestAnimationFrame(gameLoop);
   }
 
+  function onCanvasTouchEnd(e) { e.preventDefault(); jump(); }
+
   function start() {
     bestScore = parseInt(localStorage.getItem('gdBest') || '0');
+    hideTouchControls(); // GD uses tap-anywhere; no D-pad needed
     document.addEventListener('keydown', onKeyDown);
     canvas.addEventListener('click', onCanvasClick);
+    canvas.addEventListener('touchend', onCanvasTouchEnd, { passive: false });
     init();
   }
 
@@ -288,6 +292,7 @@ const GeometryDash = (() => {
     if (animFrame) { cancelAnimationFrame(animFrame); animFrame = null; }
     document.removeEventListener('keydown', onKeyDown);
     canvas.removeEventListener('click', onCanvasClick);
+    canvas.removeEventListener('touchend', onCanvasTouchEnd);
   }
 
   return { start, stop };

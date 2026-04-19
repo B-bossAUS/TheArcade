@@ -636,6 +636,7 @@ const SpaceShooter = (() => {
 
   function start() {
     keys = {};
+    showTouchControls('shooter');
     document.addEventListener('keydown', onKeyDown);
     document.addEventListener('keyup', onKeyUp);
     initGame();
@@ -646,6 +647,7 @@ const SpaceShooter = (() => {
     if (animFrame) { cancelAnimationFrame(animFrame); animFrame = null; }
     document.removeEventListener('keydown', onKeyDown);
     document.removeEventListener('keyup', onKeyUp);
+    hideTouchControls();
     keys = {};
   }
 
