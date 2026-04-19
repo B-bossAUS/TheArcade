@@ -589,10 +589,17 @@ const GravityChanger = (() => {
         tick = 0;
       }
     } else if (screen === 'game') {
-      // Tap = flip for player 1 (mobile)
-      if (players[0] && !players[0].dead) {
-        players[0].keys.flip = true;
-        setTimeout(() => { if (players[0]) players[0].keys.flip = false; }, 80);
+      // In 2p mode tap top half = P1, bottom half = P2; in 1p tap anywhere = P1
+      const flipPlayer = (p) => {
+        if (p && !p.dead) {
+          p.keys.flip = true;
+          setTimeout(() => { if (p) p.keys.flip = false; }, 80);
+        }
+      };
+      if (mode === '2p') {
+        flipPlayer(my < H / 2 ? players[0] : players[1]);
+      } else {
+        flipPlayer(players[0]);
       }
     }
   }
