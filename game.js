@@ -114,7 +114,15 @@ const GeometryDash = (() => {
     updateTrail();
     player.vy += GRAVITY;
     player.y += player.vy;
-    if (player.y >= GROUND_Y) { player.y = GROUND_Y; player.vy = 0; player.onGround = true; }
+    if (player.y >= GROUND_Y) {
+      player.y = GROUND_Y;
+      player.vy = 0;
+      if (!player.onGround) {
+        // Snap to nearest 90° so the cube sits flat on landing
+        player.rotation = Math.round(player.rotation / (Math.PI / 2)) * (Math.PI / 2);
+      }
+      player.onGround = true;
+    }
     player.rotation += player.onGround ? 0 : (speed / BASE_SPEED) * 0.12;
 
     for (let i = obstacles.length - 1; i >= 0; i--) {
