@@ -217,21 +217,62 @@ const GAMES = [
     },
     game: () => GravityChanger,
   },
+  {
+    title: 'LASER DODGE',
+    subtitle: 'Dodge the lines!',
+    color: '#ff3333',
+    drawIcon(cx, cy) {
+      ctx.save();
+      ctx.translate(cx, cy);
+
+      // Animated red line sweeping in from the right
+      const lineX = -5 + Math.sin(menuFrame * 0.07) * 8;
+      ctx.strokeStyle = '#ff3333';
+      ctx.lineWidth = 3;
+      ctx.lineCap = 'square';
+      ctx.shadowColor = '#ff0000';
+      ctx.shadowBlur = 12;
+      ctx.beginPath();
+      ctx.moveTo(lineX - 2, -4);
+      ctx.lineTo(lineX + 30, -4);
+      ctx.stroke();
+      ctx.beginPath();
+      ctx.moveTo(lineX - 10, 10);
+      ctx.lineTo(lineX + 20, 10);
+      ctx.stroke();
+      ctx.shadowBlur = 0;
+
+      // Green stick figure dodging on the left
+      const bob = Math.sin(menuFrame * 0.1) * 3;
+      const fx = -24, fy = 2 + bob;
+      ctx.strokeStyle = '#22ff66';
+      ctx.lineWidth = 2;
+      ctx.lineCap = 'round';
+      ctx.shadowColor = '#22ff66';
+      ctx.shadowBlur = 8;
+      ctx.beginPath(); ctx.arc(fx, fy - 13, 5, 0, Math.PI * 2); ctx.stroke();
+      ctx.beginPath(); ctx.moveTo(fx, fy - 8); ctx.lineTo(fx, fy + 4); ctx.stroke();
+      ctx.beginPath(); ctx.moveTo(fx - 7, fy - 4); ctx.lineTo(fx + 7, fy - 4); ctx.stroke();
+      const ls = Math.sin(menuFrame * 0.18) * 5;
+      ctx.beginPath(); ctx.moveTo(fx, fy + 4); ctx.lineTo(fx - 4, fy + 12 + ls); ctx.stroke();
+      ctx.beginPath(); ctx.moveTo(fx, fy + 4); ctx.lineTo(fx + 4, fy + 12 - ls); ctx.stroke();
+      ctx.shadowBlur = 0;
+
+      ctx.restore();
+    },
+    game: () => LineDodger,
+  },
 ];
 
 function getCardBounds(i) {
-  // Row 1: games 0-2  |  Row 2: games 3-4
+  // Both rows: 3 cards, 200px wide, 12px gap — identical sizing
+  const cardW = 200, cardH = 126, gap = 12;
+  const totalW = 3 * cardW + 2 * gap;
+  const startX = (canvas.width - totalW) / 2;
   if (i < 3) {
-    const cardW = 200, cardH = 126, gap = 12;
-    const totalW = 3 * cardW + 2 * gap;
-    const startX = (canvas.width - totalW) / 2;
     return { x: startX + i * (cardW + gap), y: 100, w: cardW, h: cardH };
   } else {
-    const j = i - 3;
-    const cardW = 268, cardH = 130, gap = 20;
-    const totalW = 2 * cardW + gap;
-    const startX = (canvas.width - totalW) / 2;
-    return { x: startX + j * (cardW + gap), y: 238, w: cardW, h: cardH };
+    return { x: startX + (i - 3) * (cardW + gap), y: 238, w: cardW, h: cardH };
   }
 }
 
