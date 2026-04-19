@@ -154,12 +154,75 @@ const GAMES = [
     },
     game: () => PancakeFlip,
   },
+  {
+    title: 'GRAVITY CHANGER',
+    subtitle: 'Flip gravity to survive',
+    color: '#aa44ff',
+    drawIcon(cx, cy) {
+      const flip = Math.sin(menuFrame * 0.05) > 0 ? 1 : -1;
+      ctx.save();
+      ctx.translate(cx, cy);
+      ctx.shadowColor = '#aa44ff';
+      ctx.shadowBlur = 14;
+      // Spikes bottom
+      ctx.fillStyle = '#ffaa00';
+      [-14, 0, 14].forEach(sx => {
+        ctx.beginPath();
+        ctx.moveTo(sx - 7, 22);
+        ctx.lineTo(sx + 7, 22);
+        ctx.lineTo(sx, 8);
+        ctx.closePath();
+        ctx.fill();
+      });
+      // Spikes top
+      [-14, 14].forEach(sx => {
+        ctx.beginPath();
+        ctx.moveTo(sx - 7, -22);
+        ctx.lineTo(sx + 7, -22);
+        ctx.lineTo(sx, -8);
+        ctx.closePath();
+        ctx.fill();
+      });
+      // Stick figure (flips)
+      ctx.scale(1, flip);
+      ctx.strokeStyle = '#aa44ff';
+      ctx.lineWidth = 2.5;
+      ctx.lineCap = 'round';
+      // Head
+      ctx.beginPath();
+      ctx.arc(0, -16, 5, 0, Math.PI * 2);
+      ctx.stroke();
+      // Body
+      ctx.beginPath();
+      ctx.moveTo(0, -11);
+      ctx.lineTo(0, 2);
+      ctx.stroke();
+      // Arms
+      ctx.beginPath();
+      ctx.moveTo(-7, -6);
+      ctx.lineTo(7, -6);
+      ctx.stroke();
+      // Legs
+      const legSwing = Math.sin(menuFrame * 0.18) * 6;
+      ctx.beginPath();
+      ctx.moveTo(0, 2);
+      ctx.lineTo(-5, 12 + legSwing);
+      ctx.stroke();
+      ctx.beginPath();
+      ctx.moveTo(0, 2);
+      ctx.lineTo(5, 12 - legSwing);
+      ctx.stroke();
+      ctx.shadowBlur = 0;
+      ctx.restore();
+    },
+    game: () => GravityChanger,
+  },
 ];
 
 function getCardBounds(i) {
-  const cardW = 175;
-  const cardH = 210;
-  const gap = 16;
+  const cardW = 148;
+  const cardH = 205;
+  const gap = 10;
   const totalW = GAMES.length * cardW + (GAMES.length - 1) * gap;
   const startX = (canvas.width - totalW) / 2;
   return { x: startX + i * (cardW + gap), y: 148, w: cardW, h: cardH };
