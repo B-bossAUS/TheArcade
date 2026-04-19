@@ -36,7 +36,7 @@ const GravityChanger = (() => {
   function makePlayer(laneTop, laneH, color, keys) {
     return {
       laneTop, laneH, color, keys,
-      y: laneTop + laneH * 0.55,  // start on "floor"
+      y: laneTop + laneH - 6 - RUNNER_H,  // feet resting on floor
       vy: 0,
       gravDir: 1,           // 1 = pulled down, -1 = pulled up
       flipLock: 0,
@@ -139,37 +139,36 @@ const GravityChanger = (() => {
 
     // Platform & obstacle collisions
     for (const obs of obstacles) {
-      const ox = obs.x - RUNNER_X;
-
+      // obs.x is the canvas x of the obstacle (runner is always at RUNNER_X on canvas)
       if (obs.type === 'platform') {
         const py = p.laneTop + p.laneH * obs.laneOffset;
-        // Stand on top
+        // Stand on top (gravity down)
         if (p.gravDir === 1 &&
             p.vy >= 0 &&
-            rectOverlap(RUNNER_X, p.y, RUNNER_W, RUNNER_H, ox, py, PLAT_W, PLAT_H) &&
+            rectOverlap(RUNNER_X, p.y, RUNNER_W, RUNNER_H, obs.x, py, PLAT_W, PLAT_H) &&
             p.y + RUNNER_H - p.vy <= py + 2) {
           p.y = py - RUNNER_H;
           p.vy = 0;
           p.onPlatform = true;
         }
-        // Hang from bottom
+        // Hang from bottom (gravity up)
         if (p.gravDir === -1 &&
             p.vy <= 0 &&
-            rectOverlap(RUNNER_X, p.y, RUNNER_W, RUNNER_H, ox, py, PLAT_W, PLAT_H) &&
+            rectOverlap(RUNNER_X, p.y, RUNNER_W, RUNNER_H, obs.x, py, PLAT_W, PLAT_H) &&
             p.y - p.vy >= py + PLAT_H - 2) {
           p.y = py + PLAT_H;
           p.vy = 0;
           p.onPlatform = true;
         }
       } else {
-        // Spike collision
+        // Spike collision — use forgiving inner hitbox
         let sx, sy, sw, sh;
         if (obs.type === 'spike_bot') {
-          sx = ox; sy = laneFloor(p) - SPIKE_H; sw = SPIKE_W; sh = SPIKE_H;
+          sx = obs.x + 3; sy = laneFloor(p) - SPIKE_H + 4; sw = SPIKE_W - 6; sh = SPIKE_H - 4;
         } else {
-          sx = ox; sy = laneCeiling(p); sw = SPIKE_W; sh = SPIKE_H;
+          sx = obs.x + 3; sy = laneCeiling(p) + 2;          sw = SPIKE_W - 6; sh = SPIKE_H - 4;
         }
-        if (rectOverlap(RUNNER_X + 2, p.y + 2, RUNNER_W - 4, RUNNER_H - 4, sx + 3, sy, sw - 6, sh - 4)) {
+        if (rectOverlap(RUNNER_X + 2, p.y + 2, RUNNER_W - 4, RUNNER_H - 4, sx, sy, sw, sh)) {
           p.dead = true;
         }
       }
@@ -237,21 +236,16 @@ const GravityChanger = (() => {
   }
 
   // ── Draw a spike ────────────────────────────────────────────────────────────
-  function drawSpike(ctx, x, y, pointUp) {
+  // baseY = y of the wide base edge; tipY = y of the sharp point
+  function drawSpike(ctx, x, baseY, tipY) {
     ctx.save();
     ctx.fillStyle = '#ffaa22';
     ctx.shadowColor = '#ff8800';
     ctx.shadowBlur = 8;
     ctx.beginPath();
-    if (pointUp) {
-      ctx.moveTo(x, y);
-      ctx.lineTo(x + SPIKE_W, y);
-      ctx.lineTo(x + SPIKE_W / 2, y - SPIKE_H);
-    } else {
-      ctx.moveTo(x, y + SPIKE_H);
-      ctx.lineTo(x + SPIKE_W, y + SPIKE_H);
-      ctx.lineTo(x + SPIKE_W / 2, y);
-    }
+    ctx.moveTo(x,             baseY);
+    ctx.lineTo(x + SPIKE_W,   baseY);
+    ctx.lineTo(x + SPIKE_W / 2, tipY);
     ctx.closePath();
     ctx.fill();
     ctx.shadowBlur = 0;
@@ -325,9 +319,11 @@ const GravityChanger = (() => {
         if (obs.type === 'platform') {
           drawPlatform(ctx, obs.x, p.laneTop + p.laneH * obs.laneOffset);
         } else if (obs.type === 'spike_bot') {
-          drawSpike(ctx, obs.x, laneFloor(p) - SPIKE_H, false);
+          // base at floor, tip points up into lane
+          drawSpike(ctx, obs.x, laneFloor(p), laneFloor(p) - SPIKE_H);
         } else {
-          drawSpike(ctx, obs.x, laneCeiling(p), true);
+          // base at ceiling, tip points down into lane
+          drawSpike(ctx, obs.x, laneCeiling(p), laneCeiling(p) + SPIKE_H);
         }
       }
 
