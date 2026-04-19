@@ -121,12 +121,45 @@ const GAMES = [
     },
     game: () => Platformer,
   },
+  {
+    title: 'PANCAKE FLIP',
+    subtitle: 'Cook the perfect pancake',
+    color: '#ffcc44',
+    drawIcon(cx, cy) {
+      ctx.save();
+      ctx.translate(cx, cy);
+      // Pan
+      ctx.fillStyle = '#1c1c1c';
+      ctx.shadowColor = '#000'; ctx.shadowBlur = 8;
+      ctx.beginPath(); ctx.arc(0, 0, 24, 0, Math.PI * 2); ctx.fill();
+      ctx.shadowBlur = 0;
+      // Batter
+      const bgrad = ctx.createRadialGradient(-4, -4, 2, 0, 0, 20);
+      bgrad.addColorStop(0, '#f5d080');
+      bgrad.addColorStop(1, '#c8820a');
+      ctx.fillStyle = bgrad;
+      ctx.shadowColor = '#ffcc44'; ctx.shadowBlur = 10;
+      ctx.beginPath(); ctx.arc(0, 0, 19, 0, Math.PI * 2); ctx.fill();
+      ctx.shadowBlur = 0;
+      // Bubbles
+      [[-7, -5], [5, 1], [-1, 8], [8, -7], [0, -1]].forEach(([bx, by], i) => {
+        const pulse = 0.4 + 0.6 * Math.abs(Math.sin(menuFrame * 0.09 + i * 1.3));
+        ctx.fillStyle = `rgba(255,255,255,${pulse * 0.75})`;
+        ctx.beginPath(); ctx.arc(bx, by, 2.8 * (0.6 + pulse * 0.4), 0, Math.PI * 2); ctx.fill();
+      });
+      // Handle
+      ctx.fillStyle = '#333';
+      ctx.beginPath(); ctx.roundRect(21, -5, 16, 10, 5); ctx.fill();
+      ctx.restore();
+    },
+    game: () => PancakeFlip,
+  },
 ];
 
 function getCardBounds(i) {
-  const cardW = 220;
-  const cardH = 220;
-  const gap = 30;
+  const cardW = 175;
+  const cardH = 210;
+  const gap = 16;
   const totalW = GAMES.length * cardW + (GAMES.length - 1) * gap;
   const startX = (canvas.width - totalW) / 2;
   return { x: startX + i * (cardW + gap), y: 148, w: cardW, h: cardH };
