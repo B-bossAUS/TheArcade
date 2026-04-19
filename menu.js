@@ -220,12 +220,19 @@ const GAMES = [
 ];
 
 function getCardBounds(i) {
-  const cardW = 148;
-  const cardH = 205;
-  const gap = 10;
-  const totalW = GAMES.length * cardW + (GAMES.length - 1) * gap;
-  const startX = (canvas.width - totalW) / 2;
-  return { x: startX + i * (cardW + gap), y: 148, w: cardW, h: cardH };
+  // Row 1: games 0-2  |  Row 2: games 3-4
+  if (i < 3) {
+    const cardW = 200, cardH = 126, gap = 12;
+    const totalW = 3 * cardW + 2 * gap;
+    const startX = (canvas.width - totalW) / 2;
+    return { x: startX + i * (cardW + gap), y: 100, w: cardW, h: cardH };
+  } else {
+    const j = i - 3;
+    const cardW = 268, cardH = 130, gap = 20;
+    const totalW = 2 * cardW + gap;
+    const startX = (canvas.width - totalW) / 2;
+    return { x: startX + j * (cardW + gap), y: 238, w: cardW, h: cardH };
+  }
 }
 
 function roundRect(x, y, w, h, r) {
@@ -266,13 +273,13 @@ function drawMenuFrame() {
   ctx.shadowColor = '#00eaff';
   ctx.shadowBlur = titleGlow;
   ctx.fillStyle = '#ffffff';
-  ctx.font = 'bold 60px monospace';
-  ctx.fillText('ARCADE', canvas.width / 2, 82);
+  ctx.font = 'bold 50px monospace';
+  ctx.fillText('ARCADE', canvas.width / 2, 66);
   ctx.shadowBlur = 0;
 
   ctx.fillStyle = 'rgba(255,255,255,0.32)';
-  ctx.font = '14px monospace';
-  ctx.fillText('SELECT A GAME  —  ESC to return here anytime', canvas.width / 2, 112);
+  ctx.font = '13px monospace';
+  ctx.fillText('SELECT A GAME  —  ESC to return here anytime', canvas.width / 2, 88);
 
   // Cards
   GAMES.forEach((game, i) => {
@@ -291,25 +298,25 @@ function drawMenuFrame() {
     ctx.stroke();
     ctx.shadowBlur = 0;
 
-    game.drawIcon(x + w / 2, cy + 76);
+    game.drawIcon(x + w / 2, cy + 44);
 
     ctx.shadowColor = game.color;
     ctx.shadowBlur = hovered ? 12 : 6;
     ctx.fillStyle = game.color;
-    ctx.font = 'bold 19px monospace';
-    ctx.fillText(game.title, x + w / 2, cy + 148);
+    ctx.font = 'bold 16px monospace';
+    ctx.fillText(game.title, x + w / 2, cy + 88);
     ctx.shadowBlur = 0;
 
     ctx.fillStyle = 'rgba(255,255,255,0.48)';
-    ctx.font = '13px monospace';
-    ctx.fillText(game.subtitle, x + w / 2, cy + 170);
+    ctx.font = '11px monospace';
+    ctx.fillText(game.subtitle, x + w / 2, cy + 105);
 
     if (hovered) {
       ctx.fillStyle = game.color;
       ctx.shadowColor = game.color;
       ctx.shadowBlur = 10;
-      ctx.font = 'bold 14px monospace';
-      ctx.fillText('▶  PLAY', x + w / 2, cy + 205);
+      ctx.font = 'bold 13px monospace';
+      ctx.fillText('▶  PLAY', x + w / 2, cy + h - 4);
       ctx.shadowBlur = 0;
     }
   });
