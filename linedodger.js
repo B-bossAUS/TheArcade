@@ -12,7 +12,7 @@ const LineDodger = (() => {
   const keysHeld = {};
 
   // ── D-pad (canvas-drawn touch controls) ────────────────────────────────────
-  const DP = { cx: 720, cy: 338, sz: 36, gap: 4 };
+  const DP = { cx: 718, cy: 335, sz: 36, gap: 14 };
   const dpTouch = { up: false, down: false, left: false, right: false };
 
   function dpBtns() {
