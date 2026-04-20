@@ -102,8 +102,8 @@ const GravityChanger = (() => {
   function updatePlayer(p) {
     if (p.dead) return;
 
-    // Flip gravity input
-    if (p.keys.flip && p.flipLock <= 0) {
+    // Flip gravity input — only allowed when touching ground, ceiling, or a platform
+    if (p.keys.flip && p.flipLock <= 0 && (p.onGround || p.onCeiling || p.onPlatform)) {
       p.gravDir *= -1;
       p.vy = 0;
       p.flipLock = FLIP_LOCK;
