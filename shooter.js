@@ -11,6 +11,59 @@ const SpaceShooter = (() => {
   let keys = {};
   let animFrame = null;
 
+  // ── Canvas d-pad (mobile) ─────────────────────────────────────────────────
+  const DP = { cx: 718, cy: 332, sz: 34, gap: 10 };
+  const dpTouch = { up: false, down: false, left: false, right: false };
+
+  function dpBtns() {
+    const { cx, cy, sz, gap } = DP;
+    return {
+      up:    { x: cx - sz / 2,   y: cy - sz - gap, w: sz, h: sz },
+      down:  { x: cx - sz / 2,   y: cy + gap,       w: sz, h: sz },
+      left:  { x: cx - sz - gap, y: cy - sz / 2,    w: sz, h: sz },
+      right: { x: cx + gap,      y: cy - sz / 2,    w: sz, h: sz },
+    };
+  }
+
+  function updateTouchDirs(e) {
+    const rect = canvas.getBoundingClientRect();
+    const sx = W / rect.width, sy = H / rect.height;
+    const btns = dpBtns();
+    dpTouch.up = dpTouch.down = dpTouch.left = dpTouch.right = false;
+    for (const t of e.touches) {
+      const tx = (t.clientX - rect.left) * sx;
+      const ty = (t.clientY - rect.top)  * sy;
+      for (const [dir, b] of Object.entries(btns)) {
+        if (tx >= b.x && tx <= b.x + b.w && ty >= b.y && ty <= b.y + b.h)
+          dpTouch[dir] = true;
+      }
+    }
+  }
+
+  function drawDpad() {
+    const btns = dpBtns();
+    const arrows = { up: '▲', down: '▼', left: '◀', right: '▶' };
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    for (const [dir, b] of Object.entries(btns)) {
+      const active = dpTouch[dir];
+      ctx.save();
+      ctx.fillStyle   = active ? 'rgba(255,102,0,0.3)' : 'rgba(255,255,255,0.07)';
+      ctx.strokeStyle = active ? '#ff8833' : 'rgba(255,255,255,0.22)';
+      ctx.lineWidth   = 1.5;
+      ctx.shadowColor = active ? '#ff8833' : 'transparent';
+      ctx.shadowBlur  = active ? 8 : 0;
+      ctx.beginPath(); ctx.roundRect(b.x, b.y, b.w, b.h, 6); ctx.fill(); ctx.stroke();
+      ctx.fillStyle  = active ? '#ff8833' : 'rgba(255,255,255,0.45)';
+      ctx.shadowBlur = 0;
+      ctx.font = '13px sans-serif';
+      ctx.fillText(arrows[dir], b.x + b.w / 2, b.y + b.h / 2);
+      ctx.restore();
+    }
+    ctx.textBaseline = 'alphabetic';
+    ctx.textAlign = 'left';
+  }
+
   const SHOOT_STARS = Array.from({ length: 120 }, () => ({
     x: Math.random() * W, y: Math.random() * H,
     r: Math.random() * 1.5 + 0.2,
@@ -92,7 +145,7 @@ const SpaceShooter = (() => {
   function spawnBoss() {
     boss = {
       x: W / 2 - 60, y: -90, w: 120, h: 80,
-      hp: 260, maxHp: 260, phase: 1,
+      hp: 200, maxHp: 200, phase: 1,
       shootTimer: 0, vx: 1.8, targetY: 55,
       exploding: false, explodeTimer: 0,
     };
@@ -184,19 +237,22 @@ const SpaceShooter = (() => {
     const by = boss.y + boss.h;
     const spread = boss.phase === 1 ? 3 : 5;
     for (let i = 0; i < spread; i++) {
-      const angle = -Math.PI / 2 + (i - (spread - 1) / 2) * 0.28;
-      eBullets.push({ x: cx, y: by, vx: Math.cos(angle) * EBULLET_SPD * 1.2, vy: Math.sin(angle) * EBULLET_SPD * 1.2 + 1 });
+      // Math.PI/2 = straight down; spread fans outward from there
+      const angle = Math.PI / 2 + (i - (spread - 1) / 2) * 0.28;
+      eBullets.push({ x: cx, y: by, vx: Math.cos(angle) * EBULLET_SPD * 1.2, vy: Math.sin(angle) * EBULLET_SPD * 1.2 });
     }
     if (boss.phase === 2) {
-      eBullets.push({ x: boss.x, y: by - 20, vx: -2.5, vy: 2 });
-      eBullets.push({ x: boss.x + boss.w, y: by - 20, vx: 2.5, vy: 2 });
+      eBullets.push({ x: boss.x,          y: by - 20, vx: -2.5, vy: 2.5 });
+      eBullets.push({ x: boss.x + boss.w, y: by - 20, vx:  2.5, vy: 2.5 });
     }
   }
 
   // ── update sections ──
   function updatePlayer() {
-    if (keys['ArrowLeft'] || keys['KeyA']) player.x = Math.max(0, player.x - PLAYER_SPEED);
-    if (keys['ArrowRight'] || keys['KeyD']) player.x = Math.min(W - player.w, player.x + PLAYER_SPEED);
+    if (keys['ArrowLeft']  || keys['KeyA'] || dpTouch.left)  player.x = Math.max(0,             player.x - PLAYER_SPEED);
+    if (keys['ArrowRight'] || keys['KeyD'] || dpTouch.right) player.x = Math.min(W - player.w,  player.x + PLAYER_SPEED);
+    if (keys['ArrowUp']    || keys['KeyW'] || dpTouch.up)    player.y = Math.max(H * 0.38,      player.y - PLAYER_SPEED);
+    if (keys['ArrowDown']  || keys['KeyS'] || dpTouch.down)  player.y = Math.min(H - player.h,  player.y + PLAYER_SPEED);
     const fRate = activePowerup === 'rapid' ? 7 : 15;
     fireTimer++;
     if (fireTimer >= fRate) { fireTimer = 0; playerShoot(); }
@@ -615,6 +671,7 @@ const SpaceShooter = (() => {
     ctx.restore();
     drawHUD();
     drawOverlay();
+    drawDpad();
   }
 
   function gameLoop() {
@@ -634,11 +691,19 @@ const SpaceShooter = (() => {
   }
   function onKeyUp(e) { delete keys[e.code]; }
 
+  function onTouchStart(e) { e.preventDefault(); updateTouchDirs(e); }
+  function onTouchMove(e)  { e.preventDefault(); updateTouchDirs(e); }
+  function onTouchEnd(e)   { e.preventDefault(); updateTouchDirs(e); }
+
   function start() {
     keys = {};
-    showTouchControls('shooter');
+    dpTouch.up = dpTouch.down = dpTouch.left = dpTouch.right = false;
+    hideTouchControls();
     document.addEventListener('keydown', onKeyDown);
     document.addEventListener('keyup', onKeyUp);
+    canvas.addEventListener('touchstart', onTouchStart, { passive: false });
+    canvas.addEventListener('touchmove',  onTouchMove,  { passive: false });
+    canvas.addEventListener('touchend',   onTouchEnd,   { passive: false });
     initGame();
     gameLoop();
   }
@@ -647,7 +712,10 @@ const SpaceShooter = (() => {
     if (animFrame) { cancelAnimationFrame(animFrame); animFrame = null; }
     document.removeEventListener('keydown', onKeyDown);
     document.removeEventListener('keyup', onKeyUp);
-    hideTouchControls();
+    canvas.removeEventListener('touchstart', onTouchStart);
+    canvas.removeEventListener('touchmove',  onTouchMove);
+    canvas.removeEventListener('touchend',   onTouchEnd);
+    dpTouch.up = dpTouch.down = dpTouch.left = dpTouch.right = false;
     keys = {};
   }
 
