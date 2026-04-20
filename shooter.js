@@ -268,7 +268,7 @@ const SpaceShooter = (() => {
       eBullets[i].x += eBullets[i].vx; eBullets[i].y += eBullets[i].vy;
       if (eBullets[i].y > H + 10 || eBullets[i].x < -10 || eBullets[i].x > W + 10) { eBullets.splice(i, 1); continue; }
       if (overlap(eBullets[i].x - 4, eBullets[i].y - 4, 8, 8, player.x + 4, player.y + 4, player.w - 8, player.h - 8)) {
-        eBullets.splice(i, 1); hitPlayer();
+        eBullets.splice(i, 1); hitPlayer(); break;
       }
     }
   }
