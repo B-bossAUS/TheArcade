@@ -2,7 +2,7 @@ const Platformer = (() => {
   const W = 800, H = 400;
 
   let state, level, lives, coins, totalCoins, score, frameCount, stateTimer, shakeFrames;
-  let player, platforms, enemies, collectibles, movingPlatforms, hazards, exitPortal, particles;
+  let player, platforms, enemies, collectibles, movingPlatforms, hazards, exitPortal, particles, bouncePads;
   let camX, keys, animFrame;
 
   // ── level definitions ──
@@ -130,6 +130,148 @@ const Platformer = (() => {
       ],
       exitX: 2630,
     },
+    {
+      name: 'ICE WORLD', bg: ['#060d1a', '#0d2040'], groundColor: '#88ccff', platColor: '#2266aa',
+      features: ['ice'],
+      width: 2800,
+      platforms: [
+        [0, 340, 300, 60],
+        [360, 300, 65, 20],
+        [490, 255, 60, 20],
+        [620, 300, 60, 20],
+        [750, 255, 60, 20],
+        [870, 340, 90, 60],
+        // Wall jump corridor 1: left wall right-edge=1000, right wall left=1060, gap=60px
+        [980, 85, 20, 265],
+        [1060, 85, 20, 265],
+        [945, 65, 155, 22],   // high platform above corridor
+        [1120, 190, 70, 20],
+        [1260, 135, 70, 20],
+        [1410, 190, 80, 20],
+        [1550, 245, 65, 20],
+        [1690, 180, 80, 20],
+        [1820, 340, 80, 60],
+        // Wall jump corridor 2: left wall right-edge=1960, right wall left=2030, gap=70px
+        [1940, 80, 20, 270],
+        [2030, 80, 20, 270],
+        [1920, 58, 140, 24],  // very high platform above corridor
+        [2095, 165, 70, 20],
+        [2230, 215, 80, 20],
+        [2390, 265, 80, 20],
+        [2540, 340, 260, 60],
+      ],
+      enemies: [
+        { x: 380, type: 'fast' }, { x: 640, type: 'fast' },
+        { x: 1140, type: 'fast' }, { x: 1430, type: 'armored' },
+        { x: 1710, type: 'fast' }, { x: 2115, type: 'fast' },
+        { x: 2250, type: 'armored' },
+      ],
+      coins: [
+        { x: 395, y: 268 }, { x: 510, y: 223 }, { x: 640, y: 268 }, { x: 770, y: 223 },
+        { x: 890, y: 308 },
+        { x: 1008, y: 195 }, { x: 1008, y: 135 }, { x: 990, y: 30 }, { x: 1025, y: 30 },
+        { x: 1155, y: 158 }, { x: 1290, y: 103 }, { x: 1445, y: 158 }, { x: 1585, y: 213 },
+        { x: 1965, y: 190 }, { x: 1972, y: 128 }, { x: 1965, y: 22 }, { x: 1998, y: 22 },
+        { x: 2120, y: 133 }, { x: 2255, y: 183 }, { x: 2415, y: 233 }, { x: 2565, y: 308 },
+      ],
+      moving: [],
+      hazards: [],
+      bouncePads: [],
+      exitX: 2620,
+    },
+    {
+      name: 'SHADOW REALM', bg: ['#020205', '#080818'], groundColor: '#330055', platColor: '#1a0030',
+      features: ['dark'],
+      width: 2600,
+      platforms: [
+        [0, 340, 260, 60],
+        [320, 285, 80, 20], [470, 245, 80, 20], [620, 285, 80, 20],
+        [780, 245, 80, 20], [940, 290, 80, 20], [1100, 245, 80, 20],
+        [1260, 285, 80, 20], [1420, 235, 100, 20], [1580, 275, 80, 20],
+        [1740, 235, 80, 20], [1900, 280, 80, 20], [2060, 240, 80, 20],
+        [2220, 290, 80, 20], [2380, 340, 220, 60],
+      ],
+      enemies: [
+        { x: 340, type: 'fast' }, { x: 490, type: 'armored' },
+        { x: 640, type: 'fast' }, { x: 800, type: 'armored' },
+        { x: 960, type: 'fast' }, { x: 1280, type: 'armored' },
+        { x: 1440, type: 'fast' }, { x: 1600, type: 'armored' },
+        { x: 1760, type: 'fast' }, { x: 2080, type: 'armored' },
+      ],
+      coins: [
+        { x: 360, y: 253 }, { x: 510, y: 213 }, { x: 660, y: 253 }, { x: 820, y: 213 },
+        { x: 980, y: 258 }, { x: 1140, y: 213 }, { x: 1300, y: 253 }, { x: 1460, y: 203 },
+        { x: 1620, y: 243 }, { x: 1780, y: 203 }, { x: 1940, y: 248 }, { x: 2100, y: 208 },
+        { x: 2260, y: 258 }, { x: 2400, y: 308 },
+      ],
+      moving: [
+        { x: 380, y: 295, w: 80, h: 18, range: 130, speed: 1.6 },
+        { x: 700, y: 255, w: 80, h: 18, range: 110, speed: 2.1 },
+        { x: 1120, y: 255, w: 80, h: 18, range: 150, speed: 1.9 },
+        { x: 1540, y: 245, w: 80, h: 18, range: 130, speed: 2.3 },
+        { x: 1920, y: 250, w: 80, h: 18, range: 120, speed: 2 },
+        { x: 2200, y: 270, w: 80, h: 18, range: 110, speed: 1.8 },
+      ],
+      hazards: [
+        [305, 356, 12, 8], [455, 356, 12, 8], [605, 356, 12, 8],
+        [765, 356, 12, 8], [925, 356, 12, 8], [1085, 356, 12, 8],
+        [1245, 356, 12, 8], [1405, 356, 12, 8], [1565, 356, 12, 8],
+        [1725, 356, 12, 8], [1885, 356, 12, 8], [2045, 356, 12, 8],
+        [2205, 356, 12, 8],
+      ],
+      bouncePads: [],
+      exitX: 2460,
+    },
+    {
+      name: 'NEON BOUNCE', bg: ['#080018', '#160035'], groundColor: '#cc00ff', platColor: '#660088',
+      features: ['bounce'],
+      width: 2800,
+      platforms: [
+        [0, 340, 240, 60],
+        [320, 270, 70, 20],
+        [470, 200, 70, 20],
+        [640, 270, 70, 20],
+        [800, 340, 100, 60],   // ground bounce-pad zone
+        [960, 155, 80, 20],    // high — need bounce
+        [1130, 245, 75, 20],
+        [1290, 155, 75, 20],   // high again
+        [1460, 280, 75, 20],
+        [1620, 340, 100, 60],  // ground bounce-pad zone
+        [1790, 120, 80, 20],   // VERY HIGH
+        [1960, 210, 75, 20],
+        [2120, 155, 75, 20],
+        [2290, 220, 80, 20],
+        [2460, 270, 80, 20],
+        [2620, 340, 200, 60],
+      ],
+      enemies: [
+        { x: 340, type: 'fast' }, { x: 490, type: 'basic' },
+        { x: 980, type: 'armored' }, { x: 1310, type: 'fast' },
+        { x: 1480, type: 'armored' }, { x: 1810, type: 'fast' },
+        { x: 1980, type: 'armored' }, { x: 2310, type: 'fast' },
+      ],
+      coins: [
+        { x: 355, y: 238 }, { x: 490, y: 168 }, { x: 660, y: 238 },
+        { x: 975, y: 123 }, { x: 1000, y: 123 },
+        { x: 1150, y: 213 }, { x: 1305, y: 123 }, { x: 1330, y: 123 },
+        { x: 1480, y: 248 }, { x: 1805, y: 88 }, { x: 1830, y: 88 },
+        { x: 1975, y: 178 }, { x: 2135, y: 123 }, { x: 2160, y: 123 },
+        { x: 2305, y: 188 }, { x: 2475, y: 238 }, { x: 2640, y: 308 },
+      ],
+      moving: [
+        { x: 350, y: 280, w: 75, h: 18, range: 100, speed: 1.5 },
+        { x: 1200, y: 265, w: 75, h: 18, range: 90, speed: 1.8 },
+        { x: 2050, y: 225, w: 75, h: 18, range: 110, speed: 2 },
+      ],
+      hazards: [],
+      bouncePads: [
+        [250, 328, 60, 14],
+        [820, 328, 60, 14],
+        [1640, 328, 60, 14],
+        [2600, 328, 60, 14],
+      ],
+      exitX: 2700,
+    },
   ];
 
   const ENEMY_DEFS = {
@@ -157,15 +299,16 @@ const Platformer = (() => {
 
     player = {
       x: 60, y: 260,
-      w: 24, h: 34,
+      w: 28, h: 28,
       vx: 0, vy: 0,
       onGround: false,
+      touchingWallLeft: false, touchingWallRight: false,
       coyoteTimer: 0,
       jumpsLeft: 2,
       facing: 1,
       animFrame: 0,
       damaged: 0,
-      stomping: false,
+      rotation: 0,
     };
 
     platforms = ld.platforms.map(([x, y, w, h]) => ({ x, y, w, h }));
@@ -189,6 +332,7 @@ const Platformer = (() => {
       };
     });
 
+    bouncePads = (ld.bouncePads || []).map(([x, y, w, h]) => ({ x, y, w, h }));
     collectibles = ld.coins.map(c => ({ x: c.x, y: c.y, r: 9, collected: false, anim: 0 }));
     totalCoins = collectibles.length;
 
@@ -214,6 +358,8 @@ const Platformer = (() => {
 
   // ── physics helpers ──
   function resolveVsStatics(ent, plats) {
+    ent.touchingWallLeft = false;
+    ent.touchingWallRight = false;
     // vertical
     ent.y += ent.vy;
     plats.forEach(p => {
@@ -225,8 +371,8 @@ const Platformer = (() => {
     ent.x += ent.vx;
     plats.forEach(p => {
       if (!overlap(ent.x, ent.y, ent.w, ent.h, p.x, p.y, p.w, p.h)) return;
-      if (ent.vx > 0) { ent.x = p.x - ent.w; ent.vx = 0; }
-      else if (ent.vx < 0) { ent.x = p.x + p.w; ent.vx = 0; }
+      if (ent.vx > 0) { ent.x = p.x - ent.w; ent.vx = 0; ent.touchingWallRight = true; }
+      else if (ent.vx < 0) { ent.x = p.x + p.w; ent.vx = 0; ent.touchingWallLeft = true; }
     });
   }
 
@@ -237,17 +383,21 @@ const Platformer = (() => {
     if (player.damaged > 0) player.damaged--;
 
     // Horizontal
-    const accel = 0.8, maxSpd = 5;
+    const hasIce = (ld.features || []).includes('ice');
+    const accel = hasIce ? 0.55 : 0.8, maxSpd = 5;
     if (keys['ArrowLeft'] || keys['KeyA']) { player.vx -= accel; player.facing = -1; }
     else if (keys['ArrowRight'] || keys['KeyD']) { player.vx += accel; player.facing = 1; }
-    else { player.vx *= 0.75; }
+    else { player.vx *= hasIce ? 0.93 : 0.75; }
     player.vx = Math.max(-maxSpd, Math.min(maxSpd, player.vx));
 
     // Gravity
     player.vy = Math.min(player.vy + 0.55, 14);
 
-    // Coyote time
-    if (player.onGround) { player.coyoteTimer = 6; player.jumpsLeft = 2; }
+    // Coyote time + rotation snap on landing
+    if (player.onGround) {
+      player.coyoteTimer = 6; player.jumpsLeft = 2;
+      player.rotation = Math.round(player.rotation / (Math.PI / 2)) * (Math.PI / 2);
+    }
     else if (player.coyoteTimer > 0) player.coyoteTimer--;
 
     player.onGround = false;
@@ -255,6 +405,22 @@ const Platformer = (() => {
     // Resolve vs static platforms
     const allPlats = [...platforms, ...movingPlatforms];
     resolveVsStatics(player, allPlats);
+
+    // Wall slide — slow descent while pressing against a wall mid-air
+    if ((player.touchingWallLeft || player.touchingWallRight) && !player.onGround && player.vy > 0) {
+      player.vy = Math.min(player.vy, 2.5);
+    }
+
+    // Bounce pads
+    bouncePads.forEach(bp => {
+      if (overlap(player.x, player.y, player.w, player.h, bp.x, bp.y, bp.w, bp.h)) {
+        player.vy = -16;
+        player.y = bp.y - player.h;
+        player.jumpsLeft = 2;
+        burst(player.x + player.w / 2, bp.y, '#ff8800', 14);
+        shakeFrames = 3;
+      }
+    });
 
     // World bounds
     player.x = Math.max(0, player.x);
@@ -352,6 +518,15 @@ const Platformer = (() => {
 
   function doJump() {
     if (state !== 'playing') return;
+    // Wall jump — kicks off walls when airborne and coyote time expired
+    if (!player.onGround && player.coyoteTimer === 0 &&
+        (player.touchingWallLeft || player.touchingWallRight)) {
+      player.vy = -12;
+      player.vx = player.touchingWallLeft ? 6 : -6;
+      burst(player.touchingWallLeft ? player.x : player.x + player.w,
+            player.y + player.h / 2, '#00eaff', 10);
+      return;
+    }
     if (player.coyoteTimer > 0 || player.jumpsLeft > 0) {
       const isDouble = player.coyoteTimer === 0;
       player.vy = isDouble ? -10 : -12;
@@ -389,6 +564,34 @@ const Platformer = (() => {
       for (let i = 0; i < 8; i++) {
         const fx = ((i * 310 - camX * 0.4) % (W + 400)) - 200;
         ctx.beginPath(); ctx.ellipse(fx, H - 20, 60, 30, 0, 0, Math.PI * 2); ctx.fill();
+      }
+    }
+    if (level === 3) {
+      // Ice crystals / snowflakes
+      ctx.fillStyle = 'rgba(140,210,255,0.06)';
+      for (let i = 0; i < 14; i++) {
+        const bx = ((i * 170 - camX * 0.2) % (W + 200)) - 100;
+        ctx.beginPath(); ctx.arc(bx, 40 + (i % 4) * 50, 18 + (i % 3) * 8, 0, Math.PI * 2); ctx.fill();
+      }
+    }
+    if (level === 4) {
+      // Floating purple motes
+      for (let i = 0; i < 30; i++) {
+        const bx = ((i * 61 - camX * 0.08) % W + W) % W;
+        const by = (i * 47) % H;
+        ctx.beginPath(); ctx.arc(bx, by, 1 + (i % 3) * 0.5, 0, Math.PI * 2);
+        ctx.fillStyle = `rgba(180,60,255,${0.15 + (i % 5) * 0.05})`; ctx.fill();
+      }
+    }
+    if (level === 5) {
+      // Neon grid lines
+      ctx.strokeStyle = 'rgba(200,0,255,0.06)'; ctx.lineWidth = 1;
+      for (let i = 0; i < 10; i++) {
+        const gx = ((i * 80 - camX * 0.15) % (W + 80)) - 40;
+        ctx.beginPath(); ctx.moveTo(gx, 0); ctx.lineTo(gx, H); ctx.stroke();
+      }
+      for (let j = 0; j < 6; j++) {
+        ctx.beginPath(); ctx.moveTo(0, j * 70); ctx.lineTo(W, j * 70); ctx.stroke();
       }
     }
   }
@@ -473,39 +676,87 @@ const Platformer = (() => {
     const flash = player.damaged > 0 && Math.floor(player.damaged / 6) % 2 === 0;
     if (flash) return;
 
-    const legSwing = Math.sin(player.animFrame * 0.2) * (Math.abs(player.vx) > 0.5 ? 8 : 0);
-    const headBob = player.onGround ? Math.abs(Math.sin(player.animFrame * 0.2)) * 2 : 0;
     const cx = sx + player.w / 2;
-    const by = player.y;
+    const cy = player.y + player.h / 2;
 
-    // Shadow
-    ctx.fillStyle = 'rgba(0,0,0,0.25)';
-    ctx.beginPath(); ctx.ellipse(cx, by + player.h + 2, 12, 4, 0, 0, Math.PI * 2); ctx.fill();
+    // Rotate: spin while airborne, roll along ground
+    if (player.onGround) {
+      player.rotation += player.vx * 0.055;
+    } else {
+      player.rotation += (player.facing || 1) * 0.07;
+    }
 
-    // Legs
-    ctx.strokeStyle = '#226600'; ctx.lineWidth = 5; ctx.lineCap = 'round';
-    ctx.beginPath(); ctx.moveTo(cx - 4, by + player.h - 8); ctx.lineTo(cx - 6 + legSwing * player.facing, by + player.h + 2); ctx.stroke();
-    ctx.beginPath(); ctx.moveTo(cx + 4, by + player.h - 8); ctx.lineTo(cx + 6 - legSwing * player.facing, by + player.h + 2); ctx.stroke();
+    // Ground shadow
+    ctx.fillStyle = 'rgba(0,0,0,0.28)';
+    ctx.beginPath();
+    ctx.ellipse(cx, player.y + player.h + 3, 14, 4, 0, 0, Math.PI * 2);
+    ctx.fill();
 
-    // Body
-    ctx.shadowColor = '#aaff00'; ctx.shadowBlur = 8;
+    // Wall-slide sparkles
+    if ((player.touchingWallLeft || player.touchingWallRight) && !player.onGround) {
+      const wx = player.touchingWallLeft ? sx : sx + player.w;
+      ctx.fillStyle = '#00eaff';
+      for (let i = 0; i < 3; i++) {
+        const fy = player.y + (i / 2) * player.h;
+        ctx.beginPath();
+        ctx.arc(wx + (Math.random() - 0.5) * 6, fy, 1.5, 0, Math.PI * 2);
+        ctx.fill();
+      }
+    }
+
+    ctx.save();
+    ctx.translate(cx, cy);
+    ctx.rotate(player.rotation);
+
+    const hw = player.w / 2; // 14
+
+    // Outer body
+    ctx.fillStyle = '#336600';
+    ctx.fillRect(-hw, -hw, player.w, player.w);
+
+    // Glowing border
+    ctx.shadowColor = '#aaff00';
+    ctx.shadowBlur = 12;
+    ctx.strokeStyle = '#aaff00';
+    ctx.lineWidth = 2;
+    ctx.strokeRect(-hw + 1, -hw + 1, player.w - 2, player.w - 2);
+    ctx.shadowBlur = 0;
+
+    // Inner square
+    ctx.fillStyle = '#77cc00';
+    ctx.fillRect(-hw + 6, -hw + 6, player.w - 12, player.w - 12);
+    ctx.strokeStyle = '#aaff44';
+    ctx.lineWidth = 1;
+    ctx.strokeRect(-hw + 6, -hw + 6, player.w - 12, player.w - 12);
+
+    // Corner pips
     ctx.fillStyle = '#aaff00';
-    ctx.fillRect(sx, by + 10 - headBob, player.w, player.h - 14);
+    const p = 2, s = 3;
+    ctx.fillRect(-hw + p, -hw + p, s, s);
+    ctx.fillRect( hw - p - s, -hw + p, s, s);
+    ctx.fillRect(-hw + p,  hw - p - s, s, s);
+    ctx.fillRect( hw - p - s,  hw - p - s, s, s);
 
-    // Arms
-    ctx.strokeStyle = '#ffe0a0'; ctx.lineWidth = 5;
-    ctx.beginPath(); ctx.moveTo(sx, by + 14 - headBob); ctx.lineTo(sx - 8, by + 22 - headBob - legSwing * 0.5 * player.facing); ctx.stroke();
-    ctx.beginPath(); ctx.moveTo(sx + player.w, by + 14 - headBob); ctx.lineTo(sx + player.w + 8, by + 22 - headBob + legSwing * 0.5 * player.facing); ctx.stroke();
+    ctx.restore();
+    ctx.shadowBlur = 0;
+  }
 
-    // Head
-    ctx.fillStyle = '#ffe0a0';
-    ctx.shadowBlur = 0;
-    ctx.beginPath(); ctx.ellipse(cx, by + 4 - headBob, 12, 12, 0, 0, Math.PI * 2); ctx.fill();
-    // Eyes
-    ctx.fillStyle = '#000000';
-    const eyeOff = player.facing * 3;
-    ctx.fillRect(cx + eyeOff - 2, by - headBob, 3, 3);
-    ctx.shadowBlur = 0;
+  function drawBouncePads() {
+    bouncePads.forEach(bp => {
+      const sx = worldToScreen(bp.x);
+      if (sx + bp.w < 0 || sx > W) return;
+      const pulse = 0.6 + 0.4 * Math.sin(frameCount * 0.14);
+      ctx.shadowColor = '#ff8800'; ctx.shadowBlur = 14 * pulse;
+      ctx.fillStyle = '#ff5500';
+      ctx.fillRect(sx, bp.y, bp.w, bp.h);
+      ctx.fillStyle = '#ffaa00';
+      ctx.fillRect(sx + 2, bp.y + 2, bp.w - 4, Math.floor(bp.h / 2) - 2);
+      ctx.shadowBlur = 0;
+      ctx.fillStyle = 'rgba(255,255,255,0.9)';
+      ctx.font = 'bold 9px monospace'; ctx.textAlign = 'center';
+      ctx.fillText('▲', sx + bp.w / 2, bp.y + bp.h - 2);
+      ctx.textAlign = 'left';
+    });
   }
 
   function drawCoins() {
@@ -573,11 +824,28 @@ const Platformer = (() => {
     // ESC hint
     ctx.fillStyle = 'rgba(255,255,255,0.2)'; ctx.font = '11px monospace';
     ctx.fillText('ESC = MENU', W - 100, 58);
-    // Double-jump tip early on
     if (level === 0 && frameCount < 300) {
       ctx.fillStyle = 'rgba(255,255,255,0.4)'; ctx.font = '12px monospace'; ctx.textAlign = 'center';
       ctx.fillText('ARROWS to move  •  SPACE to jump (double-jump!)', W / 2, H - 12);
       ctx.textAlign = 'left';
+    }
+    if (level === 3 && frameCount < 420) {
+      ctx.fillStyle = 'rgba(0,234,255,0.7)'; ctx.font = '12px monospace'; ctx.textAlign = 'center';
+      ctx.shadowColor = '#00eaff'; ctx.shadowBlur = 6;
+      ctx.fillText('ICE: slippery!  •  WALL JUMP: press JUMP while touching a wall', W / 2, H - 12);
+      ctx.shadowBlur = 0; ctx.textAlign = 'left';
+    }
+    if (level === 4 && frameCount < 360) {
+      ctx.fillStyle = 'rgba(180,80,255,0.8)'; ctx.font = '12px monospace'; ctx.textAlign = 'center';
+      ctx.shadowColor = '#bb44ff'; ctx.shadowBlur = 6;
+      ctx.fillText('SHADOW REALM: enemies lurk in the dark — follow the coins!', W / 2, H - 12);
+      ctx.shadowBlur = 0; ctx.textAlign = 'left';
+    }
+    if (level === 5 && frameCount < 360) {
+      ctx.fillStyle = 'rgba(255,140,0,0.8)'; ctx.font = '12px monospace'; ctx.textAlign = 'center';
+      ctx.shadowColor = '#ff8800'; ctx.shadowBlur = 6;
+      ctx.fillText('NEON BOUNCE: land on orange pads for mega-jumps!', W / 2, H - 12);
+      ctx.shadowBlur = 0; ctx.textAlign = 'left';
     }
   }
 
@@ -653,12 +921,24 @@ const Platformer = (() => {
     ctx.clearRect(-20, -20, W + 40, H + 40);
     drawBg();
     drawHazards();
+    drawBouncePads();
     drawPlatforms();
     drawExitPortal();
     drawCoins();
     drawEnemies();
     drawParticles();
     drawPlayer();
+    // Dark-level spotlight overlay
+    if ((LEVELS[level].features || []).includes('dark')) {
+      const px = worldToScreen(player.x + player.w / 2);
+      const py = player.y + player.h / 2;
+      const grd = ctx.createRadialGradient(px, py, 28, px, py, 190);
+      grd.addColorStop(0, 'rgba(0,0,0,0)');
+      grd.addColorStop(0.45, 'rgba(0,0,0,0.65)');
+      grd.addColorStop(1, 'rgba(0,0,0,0.97)');
+      ctx.fillStyle = grd;
+      ctx.fillRect(0, 0, W, H);
+    }
     ctx.restore();
     drawHUD();
     drawOverlay();
