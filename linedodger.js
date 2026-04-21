@@ -86,7 +86,6 @@ const LineDodger = (() => {
   // ── Update ─────────────────────────────────────────────────────────────────
   function update() {
     frame++;
-    pollGamepad();
 
     // Score: 1 per 0.1 s = every 6 frames
     if (frame % 6 === 0) score++;
@@ -253,6 +252,7 @@ const LineDodger = (() => {
 
   // ── Loop ───────────────────────────────────────────────────────────────────
   function gameLoop() {
+    pollGamepad();
     if (!gameOver) update();
     draw();
     animId = requestAnimationFrame(gameLoop);
