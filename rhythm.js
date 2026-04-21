@@ -87,11 +87,17 @@ const RhythmTap = (() => {
   let score, combo, bestCombo, lives;
   let activeNotes, noteQueue, nextNoteIdx;
   let ratingFlashes, missFlash;
-  let keysHeld, animId, running;
+  let keysHeld, laneClickHeld, animId, running;
 
   // ── Helpers ───────────────────────────────────────────────────────
   function laneX(i)  { return LANE_START_X + i * (LANE_W + LANE_GAP); }
   function laneCX(i) { return laneX(i) + LANE_W / 2; }
+
+  function laneFromX(cx) {
+    for (let i = 0; i < 4; i++)
+      if (cx >= laneX(i) && cx <= laneX(i) + LANE_W) return i;
+    return -1;
+  }
 
   // ── Audio helpers ─────────────────────────────────────────────────
   function makeNoise(dur) {
@@ -416,6 +422,7 @@ const RhythmTap = (() => {
     noteQueue   = generateNoteQueue(musicStart);
     nextNoteIdx = 0;
     keysHeld    = {};
+    laneClickHeld = [false, false, false, false];
     gameState   = 'playing';
   }
 
@@ -571,7 +578,7 @@ const RhythmTap = (() => {
 
     // Lane columns
     LANES.forEach((lane, i) => {
-      const x = laneX(i), held = keysHeld[lane.key];
+      const x = laneX(i), held = keysHeld[lane.key] || laneClickHeld[i];
       ctx.fillStyle = held ? lane.color + '30' : lane.color + '16';
       ctx.fillRect(x, 0, LANE_W, H);
       ctx.strokeStyle = lane.color + '40'; ctx.lineWidth = 1;
@@ -581,7 +588,7 @@ const RhythmTap = (() => {
 
     // Target zones
     LANES.forEach((lane, i) => {
-      const x = laneX(i), held = keysHeld[lane.key];
+      const x = laneX(i), held = keysHeld[lane.key] || laneClickHeld[i];
       ctx.shadowColor = lane.color; ctx.shadowBlur = held ? 20 : 8;
       ctx.strokeStyle = lane.color; ctx.lineWidth = held ? 3 : 2;
       ctx.fillStyle   = lane.color + (held ? '30' : '16');
@@ -705,6 +712,37 @@ const RhythmTap = (() => {
     });
   }
 
+  function onCanvasMouseDown(e) {
+    if (!running || gameState !== 'playing') return;
+    const r = canvas.getBoundingClientRect();
+    const mx = (e.clientX - r.left) * (W / r.width);
+    const i = laneFromX(mx);
+    if (i >= 0) { laneClickHeld[i] = true; tryHit(i); }
+  }
+
+  function onCanvasMouseUp() {
+    if (!running) return;
+    laneClickHeld = [false, false, false, false];
+  }
+
+  function onTouchStart(e) {
+    if (!running) return;
+    e.preventDefault();
+    if (gameState !== 'playing') return;
+    const r = canvas.getBoundingClientRect();
+    for (const t of e.changedTouches) {
+      const mx = (t.clientX - r.left) * (W / r.width);
+      const i = laneFromX(mx);
+      if (i >= 0) { laneClickHeld[i] = true; tryHit(i); }
+    }
+  }
+
+  function onTouchEnd(e) {
+    if (!running) return;
+    e.preventDefault();
+    laneClickHeld = [false, false, false, false];
+  }
+
   function onKeyDown(e) {
     if (!running) return;
     if (e.code === 'Escape') {
@@ -738,28 +776,38 @@ const RhythmTap = (() => {
     running = false;
     if (animId) { cancelAnimationFrame(animId); animId = null; }
     if (audioCtx) { try { audioCtx.close(); } catch(_){} audioCtx = null; }
-    document.removeEventListener('keydown',  onKeyDown);
-    document.removeEventListener('keyup',    onKeyUp);
-    canvas.removeEventListener('mousemove',  onMouseMove);
-    canvas.removeEventListener('click',      onCanvasClick);
+    document.removeEventListener('keydown',   onKeyDown);
+    document.removeEventListener('keyup',     onKeyUp);
+    canvas.removeEventListener('mousemove',   onMouseMove);
+    canvas.removeEventListener('click',       onCanvasClick);
+    canvas.removeEventListener('mousedown',   onCanvasMouseDown);
+    canvas.removeEventListener('mouseup',     onCanvasMouseUp);
+    canvas.removeEventListener('touchstart',  onTouchStart);
+    canvas.removeEventListener('touchend',    onTouchEnd);
     canvas.style.cursor = 'default';
     keysHeld = {};
+    laneClickHeld = [false, false, false, false];
   }
 
   // ── Public start ──────────────────────────────────────────────────
   function start() {
     cleanup();
-    running      = true;
-    gameState    = 'select';
-    hoveredLevel = -1;
-    keysHeld     = {};
-    activeNotes  = [];
+    running       = true;
+    gameState     = 'select';
+    hoveredLevel  = -1;
+    keysHeld      = {};
+    laneClickHeld = [false, false, false, false];
+    activeNotes   = [];
     ratingFlashes = [];
     hideTouchControls();
     document.addEventListener('keydown',  onKeyDown);
     document.addEventListener('keyup',    onKeyUp);
     canvas.addEventListener('mousemove',  onMouseMove);
     canvas.addEventListener('click',      onCanvasClick);
+    canvas.addEventListener('mousedown',  onCanvasMouseDown);
+    canvas.addEventListener('mouseup',    onCanvasMouseUp);
+    canvas.addEventListener('touchstart', onTouchStart, { passive: false });
+    canvas.addEventListener('touchend',   onTouchEnd,   { passive: false });
     gameLoop();
   }
 
