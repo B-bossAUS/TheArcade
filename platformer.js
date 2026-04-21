@@ -5,6 +5,25 @@ const Platformer = (() => {
   let player, platforms, enemies, collectibles, movingPlatforms, hazards, exitPortal, particles, bouncePads;
   let camX, keys, animFrame;
 
+  const GP_DEAD = 0.2;
+  const gpState = { left: false, right: false };
+  let gpWasJump = false;
+
+  function pollGamepad() {
+    gpState.left = gpState.right = false;
+    let jumpNow = false;
+    const pads = navigator.getGamepads ? navigator.getGamepads() : [];
+    for (const gp of pads) {
+      if (!gp) continue;
+      if (gp.axes[0] < -GP_DEAD) gpState.left  = true;
+      if (gp.axes[0] >  GP_DEAD) gpState.right = true;
+      if (gp.axes[1] < -0.5 || gp.buttons[0]?.pressed) jumpNow = true;
+      break;
+    }
+    if (jumpNow && !gpWasJump) doJump();
+    gpWasJump = jumpNow;
+  }
+
   // ── level definitions ──
   // Each platform: [x, y, w, h]  (world coords)
   // Exit portal at far right of each level
@@ -476,11 +495,13 @@ const Platformer = (() => {
     player.animFrame++;
     if (player.damaged > 0) player.damaged--;
 
+    pollGamepad();
+
     // Horizontal
     const hasIce = (ld.features || []).includes('ice');
     const accel = hasIce ? 0.55 : 0.8, maxSpd = 5;
-    if (keys['ArrowLeft'] || keys['KeyA']) { player.vx -= accel; player.facing = -1; }
-    else if (keys['ArrowRight'] || keys['KeyD']) { player.vx += accel; player.facing = 1; }
+    if (keys['ArrowLeft'] || keys['KeyA'] || gpState.left)  { player.vx -= accel; player.facing = -1; }
+    else if (keys['ArrowRight'] || keys['KeyD'] || gpState.right) { player.vx += accel; player.facing = 1; }
     else { player.vx *= hasIce ? 0.93 : 0.75; }
     player.vx = Math.max(-maxSpd, Math.min(maxSpd, player.vx));
 
