@@ -699,25 +699,28 @@ const RhythmTap = (() => {
     }
   }
 
-  function onCanvasClick(e) {
+  function handlePointerDown(mx, my, isTouch) {
     if (!running) return;
     if (gameState === 'gameover') { startLevel(currentLevel); return; }
-    if (gameState !== 'select') return;
-    const r = canvas.getBoundingClientRect();
-    const mx = (e.clientX - r.left) * (W / r.width);
-    const my = (e.clientY - r.top)  * (H / r.height);
-    LEVELS.forEach((_, i) => {
-      const b = cardBounds(i);
-      if (mx >= b.x && mx <= b.x+b.w && my >= b.y-10 && my <= b.y+b.h) startLevel(i);
-    });
+    if (gameState === 'select') {
+      LEVELS.forEach((_, i) => {
+        const b = cardBounds(i);
+        if (mx >= b.x && mx <= b.x+b.w && my >= b.y-10 && my <= b.y+b.h) startLevel(i);
+      });
+      return;
+    }
+    if (gameState === 'playing') {
+      const i = laneFromX(mx);
+      if (i >= 0) { laneClickHeld[i] = true; tryHit(i); }
+    }
   }
 
   function onCanvasMouseDown(e) {
-    if (!running || gameState !== 'playing') return;
+    if (!running) return;
     const r = canvas.getBoundingClientRect();
     const mx = (e.clientX - r.left) * (W / r.width);
-    const i = laneFromX(mx);
-    if (i >= 0) { laneClickHeld[i] = true; tryHit(i); }
+    const my = (e.clientY - r.top)  * (H / r.height);
+    handlePointerDown(mx, my, false);
   }
 
   function onCanvasMouseUp() {
@@ -728,12 +731,11 @@ const RhythmTap = (() => {
   function onTouchStart(e) {
     if (!running) return;
     e.preventDefault();
-    if (gameState !== 'playing') return;
     const r = canvas.getBoundingClientRect();
     for (const t of e.changedTouches) {
       const mx = (t.clientX - r.left) * (W / r.width);
-      const i = laneFromX(mx);
-      if (i >= 0) { laneClickHeld[i] = true; tryHit(i); }
+      const my = (t.clientY - r.top)  * (H / r.height);
+      handlePointerDown(mx, my, true);
     }
   }
 
@@ -779,7 +781,6 @@ const RhythmTap = (() => {
     document.removeEventListener('keydown',   onKeyDown);
     document.removeEventListener('keyup',     onKeyUp);
     canvas.removeEventListener('mousemove',   onMouseMove);
-    canvas.removeEventListener('click',       onCanvasClick);
     canvas.removeEventListener('mousedown',   onCanvasMouseDown);
     canvas.removeEventListener('mouseup',     onCanvasMouseUp);
     canvas.removeEventListener('touchstart',  onTouchStart);
@@ -803,7 +804,6 @@ const RhythmTap = (() => {
     document.addEventListener('keydown',  onKeyDown);
     document.addEventListener('keyup',    onKeyUp);
     canvas.addEventListener('mousemove',  onMouseMove);
-    canvas.addEventListener('click',      onCanvasClick);
     canvas.addEventListener('mousedown',  onCanvasMouseDown);
     canvas.addEventListener('mouseup',    onCanvasMouseUp);
     canvas.addEventListener('touchstart', onTouchStart, { passive: false });
