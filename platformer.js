@@ -11,16 +11,24 @@ const Platformer = (() => {
 
   function pollGamepad() {
     gpState.left = gpState.right = false;
-    let jumpNow = false;
+    let joystickUp = false, button0Now = false;
     const pads = navigator.getGamepads ? navigator.getGamepads() : [];
     for (const gp of pads) {
       if (!gp) continue;
       if (gp.axes[0] < -GP_DEAD) gpState.left  = true;
       if (gp.axes[0] >  GP_DEAD) gpState.right = true;
-      if (gp.axes[1] < -0.5 || gp.buttons[0]?.pressed) jumpNow = true;
+      if (gp.axes[1] < -0.5)        joystickUp  = true;
+      if (gp.buttons[0]?.pressed)   button0Now  = true;
       break;
     }
-    if (jumpNow && !gpWasJump) doJump();
+    const jumpNow = joystickUp || button0Now;
+    if (jumpNow && !gpWasJump) {
+      if (state === 'gameover' || state === 'win') {
+        state = 'select'; hideTouchControls(); keys = {}; hoveredLevel = -1; canvas.style.cursor = 'default';
+      } else if (state === 'playing') {
+        doJump();
+      }
+    }
     gpWasJump = jumpNow;
   }
 
@@ -494,8 +502,6 @@ const Platformer = (() => {
     const ld = LEVELS[level];
     player.animFrame++;
     if (player.damaged > 0) player.damaged--;
-
-    pollGamepad();
 
     // Horizontal
     const hasIce = (ld.features || []).includes('ice');
@@ -1060,7 +1066,7 @@ const Platformer = (() => {
     drawOverlay();
   }
 
-  function gameLoop() { if (state !== 'select') update(); draw(); animFrame = requestAnimationFrame(gameLoop); }
+  function gameLoop() { pollGamepad(); if (state !== 'select') update(); draw(); animFrame = requestAnimationFrame(gameLoop); }
 
   // ── input ──
   function onKeyDown(e) {

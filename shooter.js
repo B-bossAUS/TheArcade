@@ -5,6 +5,7 @@ const SpaceShooter = (() => {
   const EBULLET_SPD = 3;
 
   let state, level, lives, score, hiScore, frameCount, shakeFrames;
+  let gpXWasPressed = false;
   let player, bullets, eBullets, enemies, boss, powerupDrops, particles;
   let activePowerup, powerupTimer, fireTimer, stateTimer;
   let gridDir, gridDropPending;
@@ -675,6 +676,11 @@ const SpaceShooter = (() => {
   }
 
   function gameLoop() {
+    const pads = navigator.getGamepads ? navigator.getGamepads() : [];
+    let xNow = false;
+    for (const gp of pads) { if (!gp) continue; if (gp.buttons[0]?.pressed) xNow = true; break; }
+    if (xNow && !gpXWasPressed && (state === 'gameover' || state === 'win')) { gpXWasPressed = false; stop(); showMenu(); return; }
+    gpXWasPressed = xNow;
     update(); draw();
     animFrame = requestAnimationFrame(gameLoop);
   }

@@ -17,6 +17,7 @@ const GravityChanger = (() => {
   // ── State ──────────────────────────────────────────────────────────────────
   let mode = '1p';             // '1p' | '2p'
   let running = false;
+  let gpXWasPressed = false;
   let animId = null;
 
   // Screen state: 'title' | 'game' | 'gameover'
@@ -453,6 +454,11 @@ const GravityChanger = (() => {
 
   // ── Game loop ───────────────────────────────────────────────────────────────
   function gameLoop() {
+    const pads = navigator.getGamepads ? navigator.getGamepads() : [];
+    let xNow = false;
+    for (const gp of pads) { if (!gp) continue; if (gp.buttons[0]?.pressed) xNow = true; break; }
+    if (xNow && !gpXWasPressed && screen === 'gameover') { gpXWasPressed = false; cleanup(); showMenu(); return; }
+    gpXWasPressed = xNow;
     animId = requestAnimationFrame(gameLoop);
     tick++;
 

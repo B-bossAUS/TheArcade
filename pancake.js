@@ -13,6 +13,7 @@ const PancakeFlip = (() => {
   let feedbackTimer, stateTimer, pourRadius;
   let flipTimer, flipScaleY, flipSideCooked;
   let frameCount, animFrame, lastTime;
+  let gpXWasPressed = false;
 
   // ── helpers ──
   function rng(a, b) { return Math.random() * (b - a) + a; }
@@ -501,6 +502,11 @@ const PancakeFlip = (() => {
   }
 
   function loop(ts) {
+    const pads = navigator.getGamepads ? navigator.getGamepads() : [];
+    let xNow = false;
+    for (const gp of pads) { if (!gp) continue; if (gp.buttons[0]?.pressed) xNow = true; break; }
+    if (xNow && !gpXWasPressed && state === 'gameover') { gpXWasPressed = false; stop(); showMenu(); return; }
+    gpXWasPressed = xNow;
     const dt = Math.min((ts - lastTime) / 1000, 0.05);
     lastTime = ts;
     update(dt);

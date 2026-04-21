@@ -5,6 +5,7 @@ const GeometryDash = (() => {
   const BASE_SPEED = 6;
 
   let player, obstacles, particles, trail, score, deaths, bestScore, gameOver, animFrame, frameCount, speed, shakeFrames;
+  let gpXWasPressed = false;
   let gdDeaths = 0;
 
   const STARS = Array.from({ length: 80 }, () => ({
@@ -280,6 +281,11 @@ const GeometryDash = (() => {
   }
 
   function gameLoop() {
+    const pads = navigator.getGamepads ? navigator.getGamepads() : [];
+    let xNow = false;
+    for (const gp of pads) { if (!gp) continue; if (gp.buttons[0]?.pressed) xNow = true; break; }
+    if (xNow && !gpXWasPressed && gameOver) { gpXWasPressed = false; stop(); showMenu(); return; }
+    gpXWasPressed = xNow;
     if (!gameOver) update();
     draw();
     animFrame = requestAnimationFrame(gameLoop);

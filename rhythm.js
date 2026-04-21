@@ -88,6 +88,7 @@ const RhythmTap = (() => {
   let activeNotes, noteQueue, nextNoteIdx;
   let ratingFlashes, missFlash;
   let keysHeld, laneClickHeld, animId, running;
+  let gpXWasPressed = false;
 
   // ── Helpers ───────────────────────────────────────────────────────
   function laneX(i)  { return LANE_START_X + i * (LANE_W + LANE_GAP); }
@@ -670,6 +671,17 @@ const RhythmTap = (() => {
 
   // ── Main loop ─────────────────────────────────────────────────────
   function gameLoop() {
+    const pads = navigator.getGamepads ? navigator.getGamepads() : [];
+    let xNow = false;
+    for (const gp of pads) { if (!gp) continue; if (gp.buttons[0]?.pressed) xNow = true; break; }
+    if (xNow && !gpXWasPressed && gameState === 'gameover') {
+      gpXWasPressed = false;
+      if (audioCtx) { try { audioCtx.close(); } catch(_){} audioCtx = null; }
+      activeNotes = []; ratingFlashes = []; keysHeld = {};
+      hoveredLevel = -1; gameState = 'select'; canvas.style.cursor = 'default';
+    } else {
+      gpXWasPressed = xNow;
+    }
     update();
     if (gameState === 'select') drawSelect();
     else drawGame();
