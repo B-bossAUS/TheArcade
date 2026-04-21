@@ -11,11 +11,13 @@ const LineDodger = (() => {
 
   const keysHeld = {};
   const gpTouch  = { up: false, down: false, left: false, right: false };
+  let gpPrevButton0 = false;
 
   const GP_DEAD = 0.25; // joystick deadzone
 
   function pollGamepad() {
     gpTouch.up = gpTouch.down = gpTouch.left = gpTouch.right = false;
+    let button0Now = false;
     const pads = navigator.getGamepads ? navigator.getGamepads() : [];
     for (const gp of pads) {
       if (!gp) continue;
@@ -29,8 +31,14 @@ const LineDodger = (() => {
       if (gp.buttons[13]?.pressed) gpTouch.down  = true;
       if (gp.buttons[14]?.pressed) gpTouch.left  = true;
       if (gp.buttons[15]?.pressed) gpTouch.right = true;
+      if (gp.buttons[0]?.pressed)  button0Now    = true;
       break; // first connected pad is enough
     }
+    // X button rising edge on game over → main menu
+    if (button0Now && !gpPrevButton0 && gameOver && running) {
+      cleanup(); showMenu();
+    }
+    gpPrevButton0 = button0Now;
   }
 
   // ── D-pad (canvas-drawn touch controls) ────────────────────────────────────
