@@ -10,6 +10,28 @@ const LineDodger = (() => {
   let running = false;
 
   const keysHeld = {};
+  const gpTouch  = { up: false, down: false, left: false, right: false };
+
+  const GP_DEAD = 0.25; // joystick deadzone
+
+  function pollGamepad() {
+    gpTouch.up = gpTouch.down = gpTouch.left = gpTouch.right = false;
+    const pads = navigator.getGamepads ? navigator.getGamepads() : [];
+    for (const gp of pads) {
+      if (!gp) continue;
+      // Left joystick
+      if (gp.axes[1] < -GP_DEAD) gpTouch.up    = true;
+      if (gp.axes[1] >  GP_DEAD) gpTouch.down  = true;
+      if (gp.axes[0] < -GP_DEAD) gpTouch.left  = true;
+      if (gp.axes[0] >  GP_DEAD) gpTouch.right = true;
+      // D-pad buttons (standard mapping: 12=up,13=down,14=left,15=right)
+      if (gp.buttons[12]?.pressed) gpTouch.up    = true;
+      if (gp.buttons[13]?.pressed) gpTouch.down  = true;
+      if (gp.buttons[14]?.pressed) gpTouch.left  = true;
+      if (gp.buttons[15]?.pressed) gpTouch.right = true;
+      break; // first connected pad is enough
+    }
+  }
 
   // ── D-pad (canvas-drawn touch controls) ────────────────────────────────────
   const DP = { cx: 718, cy: 335, sz: 36, gap: 14 };
@@ -56,6 +78,7 @@ const LineDodger = (() => {
   // ── Update ─────────────────────────────────────────────────────────────────
   function update() {
     frame++;
+    pollGamepad();
 
     // Score: 1 per 0.1 s = every 6 frames
     if (frame % 6 === 0) score++;
@@ -70,10 +93,10 @@ const LineDodger = (() => {
     }
 
     // Player movement
-    const up    = keysHeld['ArrowUp']    || keysHeld['KeyW'] || dpTouch.up;
-    const down  = keysHeld['ArrowDown']  || keysHeld['KeyS'] || dpTouch.down;
-    const left  = keysHeld['ArrowLeft']  || keysHeld['KeyA'] || dpTouch.left;
-    const right = keysHeld['ArrowRight'] || keysHeld['KeyD'] || dpTouch.right;
+    const up    = keysHeld['ArrowUp']    || keysHeld['KeyW'] || dpTouch.up    || gpTouch.up;
+    const down  = keysHeld['ArrowDown']  || keysHeld['KeyS'] || dpTouch.down  || gpTouch.down;
+    const left  = keysHeld['ArrowLeft']  || keysHeld['KeyA'] || dpTouch.left  || gpTouch.left;
+    const right = keysHeld['ArrowRight'] || keysHeld['KeyD'] || dpTouch.right || gpTouch.right;
 
     if (up)    player.y = Math.max(28,      player.y - P_SPEED);
     if (down)  player.y = Math.min(H - 20,  player.y + P_SPEED);
