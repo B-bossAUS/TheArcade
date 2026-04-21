@@ -12,11 +12,13 @@ const LineDodger = (() => {
   const keysHeld = {};
   const gpTouch  = { up: false, down: false, left: false, right: false };
   let gpPrevButton0 = false;
+  let gpMenuFired   = false;
 
   const GP_DEAD = 0.25; // joystick deadzone
 
   function pollGamepad() {
     gpTouch.up = gpTouch.down = gpTouch.left = gpTouch.right = false;
+    gpMenuFired = false;
     let button0Now = false;
     const pads = navigator.getGamepads ? navigator.getGamepads() : [];
     for (const gp of pads) {
@@ -34,10 +36,8 @@ const LineDodger = (() => {
       if (gp.buttons[0]?.pressed)  button0Now    = true;
       break; // first connected pad is enough
     }
-    // X button rising edge on game over → main menu
-    if (button0Now && !gpPrevButton0 && gameOver && running) {
-      cleanup(); showMenu();
-    }
+    // Rising edge on X button — signal gameLoop to act
+    if (button0Now && !gpPrevButton0) gpMenuFired = true;
     gpPrevButton0 = button0Now;
   }
 
@@ -253,6 +253,7 @@ const LineDodger = (() => {
   // ── Loop ───────────────────────────────────────────────────────────────────
   function gameLoop() {
     pollGamepad();
+    if (gameOver && gpMenuFired) { cleanup(); showMenu(); return; }
     if (!gameOver) update();
     draw();
     animId = requestAnimationFrame(gameLoop);
