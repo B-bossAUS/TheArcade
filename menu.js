@@ -262,16 +262,47 @@ const GAMES = [
     },
     game: () => LineDodger,
   },
+  {
+    title: 'RHYTHM TAP',
+    subtitle: 'Hit the beat!',
+    color: '#ff44cc',
+    drawIcon(cx, cy) {
+      ctx.save();
+      ctx.translate(cx, cy);
+      const laneColors = ['#3388ff', '#ff3355', '#33ff66', '#ffaa22'];
+      const lw = 12, g = 7;
+      const sx = -(4 * lw + 3 * g) / 2;
+      laneColors.forEach((c, i) => {
+        const lx = sx + i * (lw + g);
+        ctx.fillStyle = c + '28';
+        ctx.fillRect(lx, -28, lw, 56);
+        const noteY = -22 + ((menuFrame * 1.4 + i * 18) % 62);
+        ctx.shadowColor = c; ctx.shadowBlur = 8;
+        ctx.fillStyle = c;
+        ctx.beginPath(); ctx.roundRect(lx, noteY - 6, lw, 12, 3); ctx.fill();
+        ctx.shadowBlur = 0;
+        // Target line at bottom
+        ctx.strokeStyle = c + 'aa';
+        ctx.lineWidth = 1.5;
+        ctx.beginPath(); ctx.moveTo(lx, 22); ctx.lineTo(lx + lw, 22); ctx.stroke();
+      });
+      ctx.restore();
+    },
+    game: () => RhythmTap,
+  },
 ];
 
 function getCardBounds(i) {
-  // Both rows: 3 cards, 200px wide, 12px gap — identical sizing
-  const cardW = 200, cardH = 126, gap = 12;
-  const totalW = 3 * cardW + 2 * gap;
-  const startX = (canvas.width - totalW) / 2;
+  const cardH = 126, gap = 12;
   if (i < 3) {
+    // Row 1: 3 cards × 200px
+    const cardW = 200, totalW = 3 * cardW + 2 * gap;
+    const startX = (canvas.width - totalW) / 2;
     return { x: startX + i * (cardW + gap), y: 100, w: cardW, h: cardH };
   } else {
+    // Row 2: 4 cards × 178px (748px total, startX ≈ 26px)
+    const cardW = 178, totalW = 4 * cardW + 3 * gap;
+    const startX = (canvas.width - totalW) / 2;
     return { x: startX + (i - 3) * (cardW + gap), y: 238, w: cardW, h: cardH };
   }
 }
