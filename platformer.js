@@ -1,7 +1,7 @@
 const Platformer = (() => {
   const W = 800, H = 400;
 
-  let state, level, lives, coins, totalCoins, score, frameCount, stateTimer, shakeFrames;
+  let state, level, lives, coins, totalCoins, score, frameCount, stateTimer, shakeFrames, hoveredLevel;
   let player, platforms, enemies, collectibles, movingPlatforms, hazards, exitPortal, particles, bouncePads;
   let camX, keys, animFrame;
 
@@ -11,7 +11,8 @@ const Platformer = (() => {
 
   const LEVELS = [
     {
-      name: 'GRASSLANDS', bg: ['#1a3a1a', '#2d6e2d'], groundColor: '#4caf50', platColor: '#388e3c',
+      name: 'GRASSLANDS', color: '#4caf50', stars: 1, feature: null,
+      bg: ['#1a3a1a', '#2d6e2d'], groundColor: '#4caf50', platColor: '#388e3c',
       width: 2200,
       platforms: [
         [0, 340, 400, 60],       // start ground
@@ -42,7 +43,8 @@ const Platformer = (() => {
       exitX: 2080,
     },
     {
-      name: 'SKY ISLANDS', bg: ['#0d1a40', '#1a3a80'], groundColor: '#00aaff', platColor: '#0077cc',
+      name: 'SKY ISLANDS', color: '#00aaff', stars: 2, feature: 'MOVING PLATS',
+      bg: ['#0d1a40', '#1a3a80'], groundColor: '#00aaff', platColor: '#0077cc',
       width: 2600,
       platforms: [
         [0, 340, 300, 60],
@@ -81,7 +83,8 @@ const Platformer = (() => {
       exitX: 2440,
     },
     {
-      name: 'LAVA CAVES', bg: ['#200000', '#4a0000'], groundColor: '#cc2200', platColor: '#8b1a00',
+      name: 'LAVA CAVES', color: '#ff4400', stars: 3, feature: 'LAVA',
+      bg: ['#200000', '#4a0000'], groundColor: '#cc2200', platColor: '#8b1a00',
       width: 2800,
       platforms: [
         [0, 340, 280, 60],
@@ -131,7 +134,8 @@ const Platformer = (() => {
       exitX: 2630,
     },
     {
-      name: 'ICE WORLD', bg: ['#060d1a', '#0d2040'], groundColor: '#88ccff', platColor: '#2266aa',
+      name: 'ICE WORLD', color: '#88ccff', stars: 3, feature: 'WALL JUMP',
+      bg: ['#060d1a', '#0d2040'], groundColor: '#88ccff', platColor: '#2266aa',
       features: ['ice'],
       width: 2800,
       platforms: [
@@ -180,7 +184,8 @@ const Platformer = (() => {
       exitX: 2620,
     },
     {
-      name: 'SHADOW REALM', bg: ['#020205', '#080818'], groundColor: '#330055', platColor: '#1a0030',
+      name: 'SHADOW REALM', color: '#aa44ff', stars: 4, feature: 'DARKNESS',
+      bg: ['#020205', '#080818'], groundColor: '#330055', platColor: '#1a0030',
       features: ['dark'],
       width: 2600,
       platforms: [
@@ -223,7 +228,8 @@ const Platformer = (() => {
       exitX: 2460,
     },
     {
-      name: 'NEON BOUNCE', bg: ['#080018', '#160035'], groundColor: '#cc00ff', platColor: '#660088',
+      name: 'NEON BOUNCE', color: '#cc00ff', stars: 5, feature: 'BOUNCE PADS',
+      bg: ['#080018', '#160035'], groundColor: '#cc00ff', platColor: '#660088',
       features: ['bounce'],
       width: 2800,
       platforms: [
@@ -279,6 +285,94 @@ const Platformer = (() => {
     fast:    { color: '#aa00ff', accent: '#dd88ff', w: 24, h: 24, speed: 2.2, maxHp: 1 },
     armored: { color: '#888888', accent: '#cccccc', w: 32, h: 30, speed: 0.9, maxHp: 2 },
   };
+
+  // ── level select helpers ──
+  function cardBounds(i) {
+    const CW = 200, CH = 145, GAP = 12;
+    const sx = (W - (3 * CW + 2 * GAP)) / 2;
+    return { x: sx + (i % 3) * (CW + GAP), y: 80 + Math.floor(i / 3) * (CH + GAP), w: CW, h: CH };
+  }
+
+  function canvasXY(e) {
+    const r = canvas.getBoundingClientRect();
+    const src = e.touches ? (e.touches[0] || e.changedTouches[0]) : e;
+    return {
+      mx: (src.clientX - r.left) * (W / r.width),
+      my: (src.clientY - r.top)  * (H / r.height),
+    };
+  }
+
+  function drawSelect() {
+    ctx.fillStyle = '#0a140a'; ctx.fillRect(0, 0, W, H);
+
+    // Scrolling grid
+    const gOff = (Date.now() / 60) % 50;
+    ctx.strokeStyle = 'rgba(76,175,80,0.07)'; ctx.lineWidth = 1;
+    for (let x = gOff - 50; x < W + 50; x += 50) {
+      ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, H); ctx.stroke();
+    }
+    for (let y = 0; y < H; y += 50) {
+      ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(W, y); ctx.stroke();
+    }
+
+    ctx.textAlign = 'center';
+    ctx.shadowColor = '#4caf50'; ctx.shadowBlur = 20;
+    ctx.fillStyle = '#4caf50'; ctx.font = 'bold 30px monospace';
+    ctx.fillText('CHOOSE LEVEL', W / 2, 44);
+    ctx.shadowBlur = 0;
+    ctx.fillStyle = 'rgba(255,255,255,0.35)'; ctx.font = '13px monospace';
+    ctx.fillText('Click a card  •  Press 1–6  •  ESC = main menu', W / 2, 64);
+
+    LEVELS.forEach((lv, i) => {
+      const b  = cardBounds(i);
+      const hov = hoveredLevel === i;
+      const cy  = b.y + (hov ? -7 : 0);
+
+      ctx.shadowColor = lv.color; ctx.shadowBlur = hov ? 26 : 8;
+      ctx.strokeStyle = lv.color; ctx.lineWidth = hov ? 2.5 : 1.5;
+      ctx.fillStyle   = hov ? 'rgba(255,255,255,0.09)' : 'rgba(255,255,255,0.04)';
+      ctx.beginPath(); ctx.roundRect(b.x, cy, b.w, b.h, 10); ctx.fill(); ctx.stroke();
+      ctx.shadowBlur = 0;
+
+      ctx.fillStyle = lv.color + (hov ? 'cc' : '88');
+      ctx.beginPath(); ctx.roundRect(b.x, cy, b.w, 7, [10, 10, 0, 0]); ctx.fill();
+
+      ctx.shadowColor = lv.color; ctx.shadowBlur = 10;
+      ctx.fillStyle = lv.color; ctx.font = 'bold 28px monospace';
+      ctx.fillText(i + 1, b.x + b.w / 2, cy + 46); ctx.shadowBlur = 0;
+
+      ctx.fillStyle = '#ffffff'; ctx.font = 'bold 12px monospace';
+      ctx.fillText(lv.name, b.x + b.w / 2, cy + 68);
+
+      ctx.fillStyle = '#ffdd00'; ctx.font = '12px monospace';
+      ctx.fillText('★'.repeat(lv.stars) + '☆'.repeat(5 - lv.stars), b.x + b.w / 2, cy + 88);
+
+      if (lv.feature) {
+        ctx.fillStyle = lv.color + 'bb'; ctx.font = 'bold 10px monospace';
+        ctx.fillText(lv.feature, b.x + b.w / 2, cy + 108);
+      }
+
+      if (hov) {
+        ctx.shadowColor = lv.color; ctx.shadowBlur = 8;
+        ctx.fillStyle = lv.color; ctx.font = 'bold 12px monospace';
+        ctx.fillText('▶  PLAY', b.x + b.w / 2, cy + b.h - 10); ctx.shadowBlur = 0;
+      }
+    });
+
+    ctx.fillStyle = 'rgba(255,255,255,0.18)'; ctx.font = '11px monospace';
+    ctx.fillText('ARROWS / SPACE to play  •  wall jump on ICE WORLD', W / 2, H - 12);
+    ctx.textAlign = 'left';
+  }
+
+  function startSelectedLevel(idx) {
+    level    = idx;
+    lives    = 3; coins = 0; score = 0; frameCount = 0;
+    hoveredLevel = -1;
+    canvas.style.cursor = 'default';
+    showTouchControls('platformer');
+    state = 'playing';
+    loadLevel();
+  }
 
   // ── helpers ──
   function rng(a, b) { return Math.random() * (b - a) + a; }
@@ -873,7 +967,7 @@ const Platformer = (() => {
       ctx.fillStyle = 'rgba(255,255,255,0.5)'; ctx.font = '16px monospace';
       ctx.fillText(`Coins: ${coins} / ${totalCoins}    Lives left: ${lives}`, W / 2, 212);
       ctx.fillStyle = '#aaff00'; ctx.shadowColor = '#aaff00'; ctx.shadowBlur = 10;
-      ctx.font = '20px monospace'; ctx.fillText('SPACE  — play again', W / 2, 278); ctx.shadowBlur = 0;
+      ctx.font = '20px monospace'; ctx.fillText('SPACE  — level select', W / 2, 278); ctx.shadowBlur = 0;
       ctx.fillStyle = 'rgba(255,255,255,0.4)'; ctx.font = '16px monospace';
       ctx.fillText('ESC  — main menu', W / 2, 308);
       ctx.textAlign = 'left';
@@ -890,7 +984,7 @@ const Platformer = (() => {
       ctx.fillStyle = '#00eaff'; ctx.shadowColor = '#00eaff'; ctx.shadowBlur = 10;
       ctx.font = '20px monospace'; ctx.fillText('SPACE  — try again', W / 2, 278); ctx.shadowBlur = 0;
       ctx.fillStyle = 'rgba(255,255,255,0.4)'; ctx.font = '16px monospace';
-      ctx.fillText('ESC  — main menu', W / 2, 308);
+      ctx.fillText('ESC  — level select', W / 2, 308);
       ctx.textAlign = 'left';
     }
   }
@@ -913,6 +1007,7 @@ const Platformer = (() => {
   }
 
   function draw() {
+    if (state === 'select') { drawSelect(); return; }
     ctx.save();
     if (shakeFrames > 0) {
       const m = shakeFrames * 0.5;
@@ -944,34 +1039,71 @@ const Platformer = (() => {
     drawOverlay();
   }
 
-  function gameLoop() { update(); draw(); animFrame = requestAnimationFrame(gameLoop); }
+  function gameLoop() { if (state !== 'select') update(); draw(); animFrame = requestAnimationFrame(gameLoop); }
 
   // ── input ──
   function onKeyDown(e) {
     keys[e.code] = true;
-    if (e.code === 'Escape') { stop(); showMenu(); return; }
+    if (e.code === 'Escape') {
+      if (state === 'select') { stop(); showMenu(); return; }
+      state = 'select'; hideTouchControls(); keys = {}; hoveredLevel = -1;
+      canvas.style.cursor = 'default'; return;
+    }
+    if (state === 'select') {
+      const n = parseInt(e.key);
+      if (n >= 1 && n <= 6) startSelectedLevel(n - 1);
+      return;
+    }
     if (e.code === 'Space' || e.code === 'ArrowUp' || e.code === 'KeyW') {
-      if (state === 'win') { initGame(); return; }
-      if (state === 'gameover') { initGame(); return; }
+      if (state === 'win')      { state = 'select'; hideTouchControls(); hoveredLevel = -1; return; }
+      if (state === 'gameover') { lives = 3; coins = 0; score = 0; frameCount = 0; state = 'playing'; loadLevel(); return; }
       doJump();
     }
   }
   function onKeyUp(e) { delete keys[e.code]; }
 
+  function onCanvasMouseMove(e) {
+    if (state !== 'select') { canvas.style.cursor = 'default'; return; }
+    const { mx, my } = canvasXY(e);
+    hoveredLevel = -1;
+    LEVELS.forEach((_, i) => {
+      const b = cardBounds(i);
+      if (mx >= b.x && mx <= b.x + b.w && my >= b.y - 10 && my <= b.y + b.h) hoveredLevel = i;
+    });
+    canvas.style.cursor = hoveredLevel >= 0 ? 'pointer' : 'default';
+  }
+
+  function onCanvasPointerDown(e) {
+    if (state !== 'select') return;
+    const { mx, my } = canvasXY(e);
+    LEVELS.forEach((_, i) => {
+      const b = cardBounds(i);
+      if (mx >= b.x && mx <= b.x + b.w && my >= b.y - 10 && my <= b.y + b.h) startSelectedLevel(i);
+    });
+  }
+
+  function onCanvasTouchDown(e) { e.preventDefault(); onCanvasPointerDown(e); }
+
   function start() {
-    keys = {};
-    showTouchControls('platformer');
+    keys = {}; hoveredLevel = -1; state = 'select';
+    hideTouchControls();
     document.addEventListener('keydown', onKeyDown);
-    document.addEventListener('keyup', onKeyUp);
-    initGame();
+    document.addEventListener('keyup',   onKeyUp);
+    canvas.addEventListener('mousemove',  onCanvasMouseMove);
+    canvas.addEventListener('mousedown',  onCanvasPointerDown);
+    canvas.addEventListener('touchstart', onCanvasTouchDown, { passive: false });
     gameLoop();
   }
 
   function stop() {
     if (animFrame) { cancelAnimationFrame(animFrame); animFrame = null; }
     document.removeEventListener('keydown', onKeyDown);
-    document.removeEventListener('keyup', onKeyUp);
+    document.removeEventListener('keyup',   onKeyUp);
+    canvas.removeEventListener('mousemove',  onCanvasMouseMove);
+    canvas.removeEventListener('mousedown',  onCanvasPointerDown);
+    canvas.removeEventListener('touchstart', onCanvasTouchDown);
     hideTouchControls();
+    canvas.style.cursor = 'default';
     keys = {};
   }
 
