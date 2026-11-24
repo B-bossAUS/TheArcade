@@ -410,7 +410,7 @@ const GAMES = [
     game: () => RhythmTap,
   },
   {
-    title: 'ROCKET LEAGUE',
+    title: 'BOOST BALL',
     subtitle: 'Car soccer  •  1-2 players',
     color: '#33aaff',
     drawIcon(cx, cy) {
@@ -5235,7 +5235,7 @@ const RhythmTap = (() => {
 </script>
   <script>
 // ===== rocket.js =====
-// Rocket League — Sideswipe-style car soccer for 1 or 2 players
+// Boost Ball — Sideswipe-style car soccer for 1 or 2 players
 // Side view. Cars drive, rotate in the air, jump, double-jump/flip and boost.
 // 3 minute match, first to 10 goals wins, tied = overtime (next goal wins).
 const RocketLeague = (() => {
@@ -5956,7 +5956,7 @@ const RocketLeague = (() => {
     ctx.textAlign = 'center';
     ctx.shadowColor = C1; ctx.shadowBlur = 20 + Math.sin(frameN * 0.06) * 8;
     ctx.fillStyle = '#fff'; ctx.font = 'bold 40px monospace';
-    ctx.fillText('ROCKET LEAGUE', W / 2, 62);
+    ctx.fillText('BOOST BALL', W / 2, 62);
     ctx.shadowBlur = 0;
     ctx.font = '13px monospace'; ctx.fillStyle = 'rgba(255,255,255,0.45)';
     ctx.fillText(screen === 'mode' ? 'Car soccer  ·  3 minutes  ·  first to 10 goals wins' : 'CHOOSE THE CPU DIFFICULTY', W / 2, 88);
