@@ -6330,14 +6330,14 @@ const Pinball = (() => {
   const TX = 250, TY = 4, TW = 300, TH = 392;
   const R = 7;                                   // ball radius
   const SUB = 4, HS = 1 / SUB;                   // physics sub-steps per frame
-  const GRAV = 0.22, MAX_V = 17;
+  const GRAV = 0.25, MAX_V = 17;
   const START_BALLS = 3;
 
   const LANE_X = 284, LANE_REST_Y = 369;
-  const FLIP_LEN = 52, FLIP_R = 5, FLIP_SPEED = 0.19;   // radians per frame
+  const FLIP_LEN = 46, FLIP_R = 5, FLIP_SPEED = 0.19;   // radians per frame
   const FLIPS = [
-    { px: 76,  py: 350, rest: 0.5,  up: -0.45, dir: 1,  ang: 0.5,  w: 0, keysDown: false },   // left
-    { px: 192, py: 350, rest: Math.PI - 0.5, up: Math.PI + 0.45, dir: -1, ang: Math.PI - 0.5, w: 0, keysDown: false }, // right
+    { px: 76,  py: 350, rest: 0.45, up: -0.45, dir: 1,  ang: 0.45,  w: 0, keysDown: false },   // left
+    { px: 192, py: 350, rest: Math.PI - 0.45, up: Math.PI + 0.45, dir: -1, ang: Math.PI - 0.45, w: 0, keysDown: false }, // right
   ];
 
   // ── Table geometry ─────────────────────────────────────────────────────────
@@ -6350,12 +6350,14 @@ const Pinball = (() => {
     const a1 = Math.PI + (i / ARC) * Math.PI, a2 = Math.PI + ((i + 1) / ARC) * Math.PI;
     seg(150 + 150 * Math.cos(a1), 150 + 150 * Math.sin(a1), 150 + 150 * Math.cos(a2), 150 + 150 * Math.sin(a2), { e: 0.35 });
   }
-  seg(0, 150, 0, 300);                 // left wall
+  seg(0, 150, 0, 392);                 // left wall (runs down past the flipper: ball can fall down the outlane)
   seg(300, 150, 300, 376);             // right wall (outside the lane)
   seg(268, 160, 268, 376);             // lane divider
   seg(268, 376, 300, 376, { e: 0.2 }); // plunger floor
-  seg(0, 300, 76, 350);                // left guide into the flipper
-  seg(268, 300, 192, 350);             // right guide into the flipper
+  seg(0, 186, 30, 226, { e: 0.5 });     // left shoulder: sends a ball coming down the wall back into play
+  seg(268, 186, 238, 226, { e: 0.5 }); // right shoulder
+  seg(26, 312, 76, 350);               // left guide into the flipper (gap to the wall = outlane)
+  seg(242, 312, 192, 350);             // right guide into the flipper (gap to the divider = outlane)
   // slingshots (triangles above the flippers)
   seg(36, 248, 66, 296, { kick: 5.5, e: 0.7, score: 10, color: '#ff6600' });
   seg(36, 248, 36, 296, { color: '#ff6600' });
@@ -6507,7 +6509,7 @@ const Pinball = (() => {
     const sx = -f.w * ry, sy = f.w * rx;
     const vn = (ball.vx - sx) * nx + (ball.vy - sy) * ny;
     if (vn < 0) {
-      const j = -(1 + 0.35) * vn;
+      const j = -(1 + 0.25) * vn;
       ball.vx += nx * j; ball.vy += ny * j;
       if (Math.abs(f.w) > 0.01) tone(150, 0.05, 'triangle', 0.03, 90);
     }
