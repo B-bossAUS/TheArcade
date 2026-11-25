@@ -655,7 +655,7 @@ function drawMenuFrame() {
 
   ctx.fillStyle = 'rgba(255,255,255,0.32)';
   ctx.font = '13px monospace';
-  ctx.fillText('SELECT A GAME  —  ESC to return here anytime', canvas.width / 2, 88);
+  ctx.fillText('SELECT A GAME  —  F or right-click a card = ★ favourite', canvas.width / 2, 82);
 
   // Cards
   GAMES.forEach((game, i) => {
@@ -691,6 +691,8 @@ function drawMenuFrame() {
     ctx.font = '9px monospace';
     ctx.fillText(game.subtitle, x + 52, cy + 44, w - 58);
 
+    Hub.cardMark(game.title, x, cy, w, hovered);
+
     if (hovered) {
       ctx.fillStyle = game.color;
       ctx.textAlign = 'right';
@@ -700,6 +702,7 @@ function drawMenuFrame() {
     ctx.textAlign = 'center';
   });
 
+  Hub.drawButtons();
   ctx.textAlign = 'left';
   menuAnimFrame = requestAnimationFrame(drawMenuFrame);
 }
@@ -729,6 +732,7 @@ canvas.addEventListener('click', (e) => {
 });
 
 function showMenu() {
+  if (typeof Hub !== 'undefined') { Hub.Stats.end(); Hub.sortGames(); }
   if (menuAnimFrame) cancelAnimationFrame(menuAnimFrame);
   menuAnimFrame = null;
   menuFrame = 0;
@@ -8366,7 +8370,10 @@ const Online = (() => {
   let ws = null, connState = 'idle', myId = 0, myName = '', notice = '', noticeT = 0;
   let locked = null, backFn = null;
   const home = () => locked ? 'browse' : 'hub';
-  let spectating = false;
+  let spectating = false, chatLog = [], chatInput = '', emoLog = [], autoJoin = null;
+  const isTouch = ('ontouchstart' in window) || (navigator.maxTouchPoints > 0);
+  const chatOn = () => { try { return localStorage.getItem('arcade_chat') !== 'off'; } catch (e) { return true; } };
+  const EMO = ['GG', 'Nice!', 'Oops!', 'Thanks'];
   let screen = 'hub', gameId = null, room = null, pubRooms = [], inst = null, inGame = false, startSeed = 0;
   let textField = null, codeInput = '', nameInput = '', btns = [], hoverBtn = null, listT = 0, pubNext = false, sendCd = 0, lastIn = '', inFrames = 0;
   const keys = {};
@@ -8385,8 +8392,10 @@ const Online = (() => {
     if (RENDER_URL && !/onrender\.com$|localhost|127\.0\.0\.1/.test(h)) return RENDER_URL.replace(/^http/, 'ws');
     return (location.protocol === 'https:' ? 'wss://' : 'ws://') + location.host;
   }
+  let helloDone = false;
   function connect() {
     if (ws && (ws.readyState === 0 || ws.readyState === 1)) return;
+    helloDone = false;
     connState = 'connecting';
     try { ws = new WebSocket(serverUrl()); } catch (e) { connState = 'failed'; return; }
     ws.onopen = () => { connState = 'open'; };
@@ -8402,13 +8411,15 @@ const Online = (() => {
 
   function onMsg(m) {
     switch (m.t) {
-      case 'welcome': myId = m.id; if (!myName) { try { myName = localStorage.getItem('arcadeName') || ''; } catch (e) {} } if (myName) tx({ t: 'hello', name: myName }); else { myName = m.name; } break;
+      case 'welcome': myId = m.id; if (helloDone) break; helloDone = true; if (!myName) { try { myName = localStorage.getItem('arcadeName') || ''; } catch (e) {} } if (myName) tx({ t: 'hello', name: myName }); else { myName = m.name; } if (autoJoin) { tx({ t: 'join', code: autoJoin }); autoJoin = null; } break;
       case 'rooms': pubRooms = m.list || []; break;
-      case 'room': if (!spectating && !m.room.players.some(p => p.id === myId)) break; room = m.room; if (!spectating && (screen === 'browse' || screen === 'hub')) { gameId = room.game; screen = 'room'; } if (inst && inGame) inst.onPlayers && inst.onPlayers(room.players); break;
+      case 'room': if (!spectating && !m.room.players.some(p => p.id === myId)) break; if (!room || room.code !== m.room.code) { chatLog = []; chatInput = ''; } room = m.room; if (!spectating && (screen === 'browse' || screen === 'hub')) { gameId = room.game; screen = 'room'; } if (inst && inGame) inst.onPlayers && inst.onPlayers(room.players); break;
       case 'err': say(m.msg); break;
       case 'kicked': case 'closed': say(m.msg || 'Left the room.'); endGameLocal(); spectating = false; room = null; screen = gameId ? 'browse' : 'hub'; break;
       case 'left': if (m.self) { room = null; } break;
-      case 'start': room = m.room; startSeed = m.seed; spectating = !!m.spec; gameId = room.game; endGameLocal(); beginGame(); break;
+      case 'start': if (typeof Hub !== 'undefined') { try { Hub.Stats.online(m.room.game); } catch (e) {} } room = m.room; startSeed = m.seed; spectating = !!m.spec; gameId = room.game; endGameLocal(); beginGame(); break;
+      case 'chat': if (chatOn()) { chatLog.push({ name: m.name, text: m.text, mine: m.id === myId }); if (chatLog.length > 40) chatLog.shift(); } break;
+      case 'emo': emoLog.push({ name: m.name, e: m.e, t: 200 }); if (emoLog.length > 5) emoLog.shift(); break;
       case 'spec': if (inst && isHost() && inst.resync) inst.resync(); break;
       case 'lobby': endGameLocal(); screen = 'room'; break;
       case 'in': if (inst && isHost()) inst.onInput(m.from, m.d); break;
@@ -8527,8 +8538,22 @@ const Online = (() => {
   };
   const MODE_INFO = { versus: 'Each player has their own lane. Last runner alive wins!', race: 'Reach the finish first. If you crash you respawn and lose a bit of time.', coop: 'Everyone shares one lane and 3 lives. Survive as long as you can together!' };
 
+  function drawChat() {
+    if (!chatOn()) return;
+    const x = 540, y = 304, w = 250, h = 92;
+    ctx.fillStyle = 'rgba(255,255,255,0.04)'; rr(x, y, w, h, 8); ctx.fill(); ctx.strokeStyle = 'rgba(255,255,255,0.2)'; ctx.lineWidth = 1; ctx.stroke();
+    txt('CHAT', x + 8, y + 13, 9, 'rgba(255,255,255,0.45)');
+    const lines = chatLog.slice(-4);
+    if (!lines.length) txt('say hi! (click below, ENTER to send)', x + 8, y + 40, 9, 'rgba(255,255,255,0.25)');
+    lines.forEach((l, i) => { const s = (l.name + ': ' + l.text); txt(s.length > 44 ? s.slice(0, 43) + '…' : s, x + 8, y + 28 + i * 14, 9, l.mine ? '#66ff99' : '#ffffff'); });
+    const fy = y + h - 24, act = textField === 'chat';
+    ctx.strokeStyle = act ? '#00eaff' : 'rgba(255,255,255,0.3)'; ctx.lineWidth = act ? 2 : 1; ctx.fillStyle = 'rgba(0,0,0,0.3)'; rr(x + 6, fy, w - 12, 20, 5); ctx.fill(); ctx.stroke();
+    const sh = chatInput.length > 30 ? chatInput.slice(-30) : chatInput;
+    txt(sh ? sh + (act && frameN % 60 < 30 ? '|' : '') : (act ? '|' : 'type a message...'), x + 12, fy + 14, 10, sh ? '#ffffff' : 'rgba(255,255,255,0.3)');
+  }
+  function sendChat() { const t = chatInput.trim(); chatInput = ''; if (t) tx({ t: 'chat', text: t }); }
   function drawRoom() {
-    const d = def(room.game); bg();
+    const d = def(room.game); bg(); drawChat();
     glow(d.title, 30, 36, 22, d.color, 'left', 10);
     txt('ROOM CODE', W - 30, 22, 11, 'rgba(255,255,255,0.5)', 'right'); glow(room.code, W - 30, 58, 36, '#ffd24a', 'right', 12);
     txt(room.pub ? 'PUBLIC ROOM' : 'PRIVATE ROOM', 30, 56, 12, room.pub ? '#66ff99' : '#b266ff');
@@ -8591,6 +8616,9 @@ const Online = (() => {
   function drawGame() {
     if (!inst) return;
     inst.draw();
+    emoLog.forEach((m, i) => { m.t--; }); emoLog = emoLog.filter(m => m.t > 0);
+    emoLog.forEach((m, i) => { ctx.globalAlpha = Math.min(1, m.t / 40); ctx.fillStyle = 'rgba(0,0,0,0.6)'; rr(8, H - 40 - i * 20, 150, 17, 8); ctx.fill(); txt(m.name.slice(0, 8) + ': ' + EMO[m.e], 14, H - 27 - i * 20, 11, '#ffd24a'); ctx.globalAlpha = 1; });
+    if (!spectating) txt('1 GG   2 Nice!   3 Oops!   4 Thanks', W - 6, H - 5, 9, 'rgba(255,255,255,0.3)', 'right');
     if (spectating) { ctx.fillStyle = 'rgba(0,0,0,0.55)'; rr(W / 2 - 100, H - 24, 200, 18, 8); ctx.fill(); txt('WATCHING  ·  ESC = stop', W / 2, H - 11, 10, '#ffffff', 'center'); return; }
     if (inst.isOver && inst.isOver()) {
       const nr = room.players.filter(p => p.ready || p.id === room.host).length;
@@ -8628,6 +8656,11 @@ const Online = (() => {
   function onKeyDown(e) {
     if (BLOCK.has(e.code) && (screen === 'game' || textField)) e.preventDefault();
     keys[e.code] = true;
+    if (textField === 'chat' && screen === 'room') {
+      if (e.code === 'Escape') { textField = null; return; }
+      if (e.key === 'Backspace') chatInput = chatInput.slice(0, -1); else if (e.key === 'Enter') { sendChat(); } else if (e.key.length === 1 && chatInput.length < 60) chatInput += e.key;
+      return;
+    }
     if (textField === 'name' || (textField === 'code' && screen === 'browse')) {
       if (e.code === 'Escape') { if (screen === 'name' && myName) { textField = null; screen = home(); } else textField = null; return; }
       if (textField === 'name') {
@@ -8640,6 +8673,7 @@ const Online = (() => {
     if (e.repeat) return;
     if (screen === 'game') {
       if (e.code === 'Escape') { if (isHost() && !spectating) tx({ t: 'lobby' }); else { tx({ t: 'leave' }); endGameLocal(); spectating = false; room = null; screen = 'browse'; tx({ t: 'list', game: gameId }); } return; }
+      if (!spectating && /^Digit[1-4]$/.test(e.code)) tx({ t: 'emo', e: +e.code.slice(5) - 1 });
       const over = inst && inst.isOver && inst.isOver();
       if (over && !spectating) {
         if (isHost() && e.code === 'Enter') tx({ t: 'again' }); else if (isHost() && e.code === 'KeyL') tx({ t: 'lobby' });
@@ -8652,6 +8686,7 @@ const Online = (() => {
       else if (screen === 'room') { tx({ t: 'leave' }); room = null; screen = 'browse'; tx({ t: 'list', game: gameId }); }
       return;
     }
+    if (screen === 'room' && (e.code === 'Enter' || e.code === 'KeyT') && chatOn()) { textField = 'chat'; e.preventDefault(); return; }
     if (screen === 'browse' && /^Key[A-Z]$/.test(e.code)) { textField = 'code'; codeInput = (codeInput + e.key.toUpperCase()).slice(0, 4); }
   }
   function onKeyUp(e) { keys[e.code] = false; }
@@ -8661,7 +8696,9 @@ const Online = (() => {
   function onMove(e) { const b = hitBtn(pos(e)); hoverBtn = b && !b.off ? b : null; canvas.style.cursor = hoverBtn ? 'pointer' : 'default'; }
   function onClick(e) {
     const p = pos(e);
-    if (screen === 'browse') { textField = (p.x > 50 && p.x < 250 && p.y > 222 && p.y < 266) ? 'code' : null; }
+    if (screen === 'browse') { textField = (p.x > 50 && p.x < 250 && p.y > 222 && p.y < 266) ? 'code' : null; if (textField === 'code' && isTouch) { const v = prompt('Room code (4 letters)', codeInput); textField = null; if (v) { codeInput = v.replace(/[^A-Za-z]/g, '').toUpperCase().slice(0, 4); joinCode(); } } }
+    else if (screen === 'name' && isTouch && p.x > 250 && p.x < 550 && p.y > 170 && p.y < 216) { const v = prompt('Pick a username (letters and numbers, up to 12)', nameInput); if (v != null) { nameInput = v.replace(/[^A-Za-z0-9 _\-]/g, '').slice(0, 12); } }
+    else if (screen === 'room' && chatOn()) { if (p.x > 546 && p.x < 784 && p.y > 370 && p.y < 392) { if (isTouch) { const v = prompt('Chat message', ''); if (v) { chatInput = v; sendChat(); } } else textField = 'chat'; } else if (textField === 'chat') textField = null; }
     const b = hitBtn(p); if (b && !b.off && b.fn) b.fn();
   }
 
@@ -8672,8 +8709,8 @@ const Online = (() => {
     document.removeEventListener('keydown', onKeyDown); document.removeEventListener('keyup', onKeyUp); window.removeEventListener('blur', onBlur);
     canvas.removeEventListener('mousemove', onMove); canvas.removeEventListener('click', onClick); canvas.style.cursor = 'default';
   }
-  function start(lockGame, back) {
-    stop(); running = true; hideTouchControls(); locked = lockGame || null; backFn = back || null; gameId = locked;
+  function start(lockGame, back, opts) {
+    stop(); autoJoin = (opts && opts.join) || null; chatLog = []; emoLog = []; chatInput = ''; running = true; hideTouchControls(); locked = lockGame || null; backFn = back || null; gameId = locked;
     document.addEventListener('keydown', onKeyDown); document.addEventListener('keyup', onKeyUp); window.addEventListener('blur', onBlur);
     canvas.addEventListener('mousemove', onMove); canvas.addEventListener('click', onClick);
     frameN = 0; acc = 0; lastTs = performance.now(); screen = 'hub'; room = null; textField = null; notice = ''; noticeT = 0; myName = '';
@@ -8683,7 +8720,7 @@ const Online = (() => {
     connect();
     animId = requestAnimationFrame(loop);
   }
-  return { start, stop };
+  return { start, stop, serverUrl };
 })();
 
 // Start screen for a game that can be played offline or online
@@ -9853,6 +9890,7 @@ const Tutorial = (() => {
     return {
       start() {
         mod = getModule(); const force = shiftHeld; shiftHeld = false;
+        if (typeof Hub !== 'undefined') Hub.Stats.begin(title);
         if (!force && seen(title)) { mod.start(); return; }
         mark(title); stopT(); running = true; hideTouchControls(); born = performance.now(); document.addEventListener('keydown', key); canvas.addEventListener('click', go); animId = requestAnimationFrame(loop);
       },
@@ -9860,6 +9898,204 @@ const Tutorial = (() => {
     };
   }
   return { wrap, T };
+})();
+
+</script>
+  <script>
+// ===== hub.js =====
+// Arcade extras: settings (sound/volume/fullscreen/chat/touch), stats, favourites, friends list, daily challenge, phone controls.
+const Hub = (() => {
+  const W = 800, H = 400;
+  const isTouch = ('ontouchstart' in window) || (navigator.maxTouchPoints > 0);
+  const lsGet = (k, d) => { try { const v = localStorage.getItem(k); return v === null ? d : JSON.parse(v); } catch (e) { return d; } };
+  const lsSet = (k, v) => { try { localStorage.setItem(k, JSON.stringify(v)); } catch (e) {} };
+
+  // ── Settings + global volume (every sound in the arcade goes through one master gain) ──
+  const SET = Object.assign({ vol: 0.8, mute: false, chat: true, touch: 'auto' }, lsGet('arcade_settings', {}));
+  const masters = new Set();
+  function applyVol() { masters.forEach(g => { try { g.gain.value = SET.mute ? 0 : SET.vol; } catch (e) {} }); }
+  function saveSettings() { lsSet('arcade_settings', SET); try { localStorage.setItem('arcade_chat', SET.chat ? 'on' : 'off'); } catch (e) {} applyVol(); }
+  try {
+    if (typeof AudioNode !== 'undefined' && typeof AudioDestinationNode !== 'undefined') {
+      const orig = AudioNode.prototype.connect;
+      const master = (c) => { if (!c.__m) { const g = c.createGain(); orig.call(g, c.destination); c.__m = g; masters.add(g); applyVol(); } return c.__m; };
+      AudioNode.prototype.connect = function (dest, a, b) { if (dest instanceof AudioDestinationNode) dest = master(this.context); return orig.call(this, dest, a, b); };
+    }
+  } catch (e) {}
+
+  // ── Stats + daily challenge ──
+  const S = Object.assign({ total: 0, launch: {}, secs: {}, online: 0, onlineBy: {}, recent: [], streak: { last: '', n: 0, best: 0 }, daily: { day: '', games: [], gsecs: {}, secs: 0, online: 0, done: false } }, lsGet('arcade_stats', {}));
+  const dayKey = (d) => { d = d || new Date(); return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0'); };
+  const hash = (s) => { let h = 7; for (let i = 0; i < s.length; i++) h = (h * 31 + s.charCodeAt(i)) >>> 0; return h; };
+  let cur = null, tickN = 0, toast = null;
+  function roll() { const t = dayKey(); if (S.daily.day !== t) S.daily = { day: t, games: [], gsecs: {}, secs: 0, online: 0, done: false }; }
+  const saveStats = () => lsSet('arcade_stats', S);
+  const titles = () => Object.keys(Tutorial.T);
+  function challenge() {
+    roll(); const h = hash(S.daily.day), list = titles(), g = list[(h >> 3) % list.length], kind = ['game', 'variety', 'minutes', 'gtime', 'game', 'variety', 'online'][h % 7], D = S.daily;
+    if (kind === 'game') return { text: 'Play ' + g, cur: D.games.includes(g) ? 1 : 0, goal: 1, fmt: v => v ? 'done' : 'not yet' };
+    if (kind === 'variety') return { text: 'Play 3 different games', cur: D.games.length, goal: 3, fmt: v => v + '/3' };
+    if (kind === 'minutes') return { text: 'Play for 10 minutes', cur: D.secs, goal: 600, fmt: v => Math.floor(v / 60) + '/10 min' };
+    if (kind === 'gtime') return { text: 'Play ' + g + ' for 3 minutes', cur: D.gsecs[g] || 0, goal: 180, fmt: v => Math.floor(v / 60) + '/3 min' };
+    return { text: 'Play an online match (with a friend!)', cur: D.online, goal: 1, fmt: v => v + '/1' };
+  }
+  function checkDaily() {
+    const c = challenge(); if (S.daily.done || c.cur < c.goal) return;
+    S.daily.done = true; const y = dayKey(new Date(Date.now() - 86400000));
+    S.streak.n = S.streak.last === y ? S.streak.n + 1 : 1; S.streak.last = dayKey(); S.streak.best = Math.max(S.streak.best, S.streak.n);
+    toast = { text: 'DAILY CHALLENGE COMPLETE!  streak: ' + S.streak.n, shown: 0 }; saveStats();
+  }
+  setInterval(() => {
+    if (!cur || document.hidden) return; roll(); S.total++; S.secs[cur] = (S.secs[cur] || 0) + 1; S.daily.secs++; S.daily.gsecs[cur] = (S.daily.gsecs[cur] || 0) + 1; checkDaily(); if (++tickN % 10 === 0) saveStats();
+  }, 1000);
+  const Stats = {
+    begin(t) { roll(); cur = t; S.launch[t] = (S.launch[t] || 0) + 1; S.recent = [t].concat(S.recent.filter(x => x !== t)).slice(0, 6); if (!S.daily.games.includes(t)) S.daily.games.push(t); checkDaily(); saveStats(); },
+    end() { cur = null; saveStats(); },
+    online(g) { roll(); S.online++; S.onlineBy[g] = (S.onlineBy[g] || 0) + 1; S.daily.online++; checkDaily(); saveStats(); },
+  };
+  window.addEventListener('beforeunload', saveStats);
+  const fmt = (s) => s < 60 ? s + 's' : s < 3600 ? Math.floor(s / 60) + 'm' : Math.floor(s / 3600) + 'h ' + Math.floor((s % 3600) / 60) + 'm';
+
+  // ── Favourites ──
+  let favs = lsGet('arcade_favs', []);
+  const isFav = (t) => favs.includes(t);
+  function sortGames() { GAMES.forEach((g, i) => { if (g._o === undefined) g._o = i; }); GAMES.sort((a, b) => (isFav(b.title) - isFav(a.title)) || (a._o - b._o)); }
+  function toggleFav(t) { favs = isFav(t) ? favs.filter(x => x !== t) : favs.concat(t); lsSet('arcade_favs', favs); sortGames(); }
+  function cardMark(title, x, y, w, hovered) {
+    ctx.textAlign = 'right';
+    if (isFav(title)) { ctx.font = 'bold 15px monospace'; ctx.fillStyle = '#ffd24a'; ctx.shadowColor = '#ffd24a'; ctx.shadowBlur = 8; ctx.fillText('★', x + w - 8, y + 17); ctx.shadowBlur = 0; }
+    else { if (hovered) { ctx.font = '15px monospace'; ctx.fillStyle = 'rgba(255,210,74,0.55)'; ctx.fillText('☆', x + w - 8, y + 17); } if (S.recent.slice(0, 3).includes(title) && !hovered) { ctx.font = '7px monospace'; ctx.fillStyle = 'rgba(120,220,255,0.7)'; ctx.fillText('RECENT', x + w - 7, y + 11); } }
+    ctx.textAlign = 'left';
+  }
+
+  // ── Menu buttons (top right) ──
+  const MB = [{ id: 'settings', label: 'SETTINGS', w: 64 }, { id: 'stats', label: 'STATS', w: 48 }, { id: 'friends', label: 'FRIENDS', w: 58 }, { id: 'daily', label: 'DAILY', w: 52 }];
+  (() => { let x = W - 8; for (let i = MB.length - 1; i >= 0; i--) { x -= MB[i].w; MB[i].x = x; x -= 6; } })();
+  let mHover = -1;
+  const pos = (cx, cy) => { const r = canvas.getBoundingClientRect(); return { x: (cx - r.left) * (W / r.width), y: (cy - r.top) * (H / r.height) }; };
+  const mHit = (p) => MB.findIndex(b => p.x >= b.x && p.x <= b.x + b.w && p.y >= 8 && p.y <= 30);
+  function drawButtons() {
+    sortOnce(); MB.forEach((b, i) => {
+      const on = mHover === i, done = b.id === 'daily' && S.daily.day === dayKey() && S.daily.done, col = b.id === 'daily' ? (done ? '#66ff99' : '#ffd24a') : '#7ad8ff';
+      ctx.strokeStyle = col; ctx.shadowColor = col; ctx.shadowBlur = on ? 14 : 4; ctx.lineWidth = on ? 2 : 1; ctx.fillStyle = on ? 'rgba(255,255,255,0.12)' : 'rgba(255,255,255,0.04)';
+      ctx.beginPath(); ctx.moveTo(b.x + 6, 8); ctx.lineTo(b.x + b.w - 6, 8); ctx.quadraticCurveTo(b.x + b.w, 8, b.x + b.w, 14); ctx.lineTo(b.x + b.w, 24); ctx.quadraticCurveTo(b.x + b.w, 30, b.x + b.w - 6, 30); ctx.lineTo(b.x + 6, 30); ctx.quadraticCurveTo(b.x, 30, b.x, 24); ctx.lineTo(b.x, 14); ctx.quadraticCurveTo(b.x, 8, b.x + 6, 8); ctx.closePath(); ctx.fill(); ctx.stroke(); ctx.shadowBlur = 0;
+      ctx.fillStyle = col; ctx.font = 'bold 9px monospace'; ctx.textAlign = 'center'; ctx.fillText(b.label + (done ? ' ✓' : ''), b.x + b.w / 2, 23);
+      if (b.id === 'daily' && !done && Math.floor(Date.now() / 500) % 2) { ctx.fillStyle = '#ff5566'; ctx.beginPath(); ctx.arc(b.x + b.w - 3, 10, 3, 0, 6.28); ctx.fill(); }
+    });
+    if (mHover >= 0) canvas.style.cursor = 'pointer';
+    if (toast) { if (++toast.shown > 260) toast = null; else { ctx.fillStyle = 'rgba(0,0,0,0.8)'; ctx.fillRect(W / 2 - 190, H - 30, 380, 22); ctx.fillStyle = '#66ff99'; ctx.font = 'bold 12px monospace'; ctx.textAlign = 'center'; ctx.fillText(toast.text, W / 2, H - 15); } }
+    ctx.textAlign = 'left';
+  }
+  let sorted = false; function sortOnce() { if (!sorted) { sorted = true; sortGames(); } }
+  const menuUp = () => typeof menuAnimFrame !== 'undefined' && !!menuAnimFrame;
+  canvas.addEventListener('mousemove', (e) => { if (!menuUp()) { mHover = -1; return; } mHover = mHit(pos(e.clientX, e.clientY)); }, true);
+  function openFromMenu(id) { cancelAnimationFrame(menuAnimFrame); menuAnimFrame = null; hoveredCard = -1; canvas.style.cursor = 'default'; open(id); }
+  canvas.addEventListener('click', (e) => {
+    if (!menuUp()) return; const p = pos(e.clientX, e.clientY), i = mHit(p);
+    if (i >= 0) { e.stopImmediatePropagation(); openFromMenu(MB[i].id); return; }
+    for (let k = 0; k < GAMES.length; k++) { const b = getCardBounds(k); if (p.x >= b.x + b.w - 26 && p.x <= b.x + b.w - 2 && p.y >= b.y - 5 && p.y <= b.y + 20) { e.stopImmediatePropagation(); toggleFav(GAMES[k].title); hoveredCard = -1; return; } }
+  }, true);
+  canvas.addEventListener('touchstart', (e) => { if (!menuUp() || !e.touches[0]) return; const i = mHit(pos(e.touches[0].clientX, e.touches[0].clientY)); if (i >= 0) { e.preventDefault(); e.stopImmediatePropagation(); openFromMenu(MB[i].id); } }, true);
+  canvas.addEventListener('contextmenu', (e) => { if (menuUp() && hoveredCard >= 0) { e.preventDefault(); toggleFav(GAMES[hoveredCard].title); hoveredCard = -1; } });
+  document.addEventListener('keydown', (e) => { if (menuUp() && e.code === 'KeyF' && hoveredCard >= 0 && !e.repeat) { toggleFav(GAMES[hoveredCard].title); hoveredCard = -1; } });
+
+  // ── Screens ──
+  let running = false, animId = null, screen = '', frame = 0, btns = [], hov = null, input = '', fws = null, fwhere = [], fwState = 'idle', fwTimer = 0, friends = lsGet('arcade_friends', []);
+  const rr = (x, y, w, h, r) => { ctx.beginPath(); ctx.moveTo(x + r, y); ctx.lineTo(x + w - r, y); ctx.quadraticCurveTo(x + w, y, x + w, y + r); ctx.lineTo(x + w, y + h - r); ctx.quadraticCurveTo(x + w, y + h, x + w - r, y + h); ctx.lineTo(x + r, y + h); ctx.quadraticCurveTo(x, y + h, x, y + h - r); ctx.lineTo(x, y + r); ctx.quadraticCurveTo(x, y, x + r, y); ctx.closePath(); };
+  const txt = (t, x, y, s, col, al, bold) => { ctx.textAlign = al || 'left'; ctx.font = (bold ? 'bold ' : '') + s + 'px monospace'; ctx.fillStyle = col; ctx.fillText(t, x, y); };
+  function glow(t, x, y, s, col, al, bl) { ctx.shadowColor = col; ctx.shadowBlur = bl || 0; txt(t, x, y, s, col, al, true); ctx.shadowBlur = 0; }
+  function button(x, y, w, h, label, col, fn, o) {
+    o = o || {}; const on = hov && hov.x === x && hov.y === y && !o.off; btns.push({ x, y, w, h, fn, off: o.off });
+    ctx.globalAlpha = o.off ? 0.35 : 1; ctx.strokeStyle = col; ctx.shadowColor = col; ctx.shadowBlur = on ? 14 : 4; ctx.lineWidth = on ? 2.5 : 1.5; ctx.fillStyle = on || o.fill ? 'rgba(255,255,255,0.12)' : 'rgba(255,255,255,0.04)'; rr(x, y, w, h, 8); ctx.fill(); ctx.stroke(); ctx.shadowBlur = 0;
+    txt(label, x + w / 2, y + h / 2 + (o.size || 13) / 3, o.size || 13, col, 'center', true); ctx.globalAlpha = 1;
+  }
+  function bg(title, col) { const g = ctx.createLinearGradient(0, 0, 0, H); g.addColorStop(0, '#030010'); g.addColorStop(1, '#0f0036'); ctx.fillStyle = g; ctx.fillRect(0, 0, W, H); glow(title, W / 2, 50, 30, '#fff', 'center', 14); ctx.strokeStyle = col; ctx.lineWidth = 2; ctx.shadowColor = col; ctx.shadowBlur = 8; ctx.beginPath(); ctx.moveTo(W / 2 - 80, 62); ctx.lineTo(W / 2 + 80, 62); ctx.stroke(); ctx.shadowBlur = 0; }
+  const bar = (x, y, w, h, v, col) => { ctx.fillStyle = 'rgba(255,255,255,0.12)'; rr(x, y, w, h, h / 2); ctx.fill(); if (v > 0) { ctx.fillStyle = col; ctx.shadowColor = col; ctx.shadowBlur = 8; rr(x, y, Math.max(h, w * Math.min(1, v)), h, h / 2); ctx.fill(); ctx.shadowBlur = 0; } };
+
+  function drawSettings() {
+    bg('SETTINGS', '#7ad8ff'); const rows = [['SOUND', SET.mute ? 'OFF' : 'ON', () => { SET.mute = !SET.mute; saveSettings(); }, SET.mute ? '#ff6677' : '#66ff99']];
+    rows.forEach(r => { txt(r[0], 140, 118, 15, '#fff', 'left', true); button(450, 98, 110, 32, r[1], r[3], r[2]); });
+    txt('VOLUME', 140, 168, 15, '#fff', 'left', true); button(450, 148, 34, 32, '-', '#7ad8ff', () => { SET.vol = Math.max(0, Math.round((SET.vol - 0.1) * 10) / 10); saveSettings(); }, { size: 18 });
+    txt(Math.round(SET.vol * 100) + '%', 522, 169, 14, '#fff', 'center', true); button(560, 148, 34, 32, '+', '#7ad8ff', () => { SET.vol = Math.min(1, Math.round((SET.vol + 0.1) * 10) / 10); saveSettings(); }, { size: 18 });
+    txt('FULLSCREEN', 140, 218, 15, '#fff', 'left', true); button(450, 198, 110, 32, document.fullscreenElement ? 'EXIT' : 'GO', '#7ad8ff', () => { try { if (document.fullscreenElement) document.exitFullscreen(); else document.documentElement.requestFullscreen(); } catch (e) {} });
+    txt('ROOM CHAT', 140, 268, 15, '#fff', 'left', true); txt('show chat from other players', 140, 284, 10, 'rgba(255,255,255,0.45)'); button(450, 248, 110, 32, SET.chat ? 'ON' : 'OFF', SET.chat ? '#66ff99' : '#ff6677', () => { SET.chat = !SET.chat; saveSettings(); });
+    txt('PHONE CONTROLS', 140, 318, 15, '#fff', 'left', true); txt('on-screen buttons (auto = phones only)', 140, 334, 10, 'rgba(255,255,255,0.45)'); button(450, 298, 110, 32, SET.touch.toUpperCase(), '#ffd24a', () => { SET.touch = SET.touch === 'auto' ? 'on' : SET.touch === 'on' ? 'off' : 'auto'; saveSettings(); });
+    button(30, 354, 110, 32, 'BACK', '#aaaaaa', close);
+  }
+  function drawStats() {
+    bg('STATS', '#7ad8ff');
+    const cells = [['TIME PLAYED', fmt(S.total)], ['GAMES STARTED', Object.values(S.launch).reduce((a, b) => a + b, 0)], ['ONLINE MATCHES', S.online], ['DAILY STREAK', S.streak.n + ' (best ' + S.streak.best + ')']];
+    cells.forEach((c, i) => { const x = 40 + i * 185; ctx.strokeStyle = 'rgba(122,216,255,0.5)'; ctx.lineWidth = 1.5; rr(x, 80, 170, 54, 8); ctx.stroke(); txt(c[0], x + 85, 98, 10, 'rgba(255,255,255,0.55)', 'center'); glow(String(c[1]), x + 85, 124, 20, '#fff', 'center', 6); });
+    const top = Object.keys(S.secs).sort((a, b) => S.secs[b] - S.secs[a]).slice(0, 8), max = top.length ? S.secs[top[0]] : 1;
+    txt('MOST PLAYED', 40, 160, 12, '#7ad8ff', 'left', true);
+    if (!top.length) txt('Play some games and your stats show up here!', W / 2, 250, 14, 'rgba(255,255,255,0.5)', 'center');
+    top.forEach((t, i) => { const y = 172 + i * 22; txt(t, 40, y + 12, 11, '#fff'); bar(210, y + 3, 380, 10, S.secs[t] / max, '#7ad8ff'); txt(fmt(S.secs[t]), 600, y + 12, 11, '#fff'); txt('x' + (S.launch[t] || 0), 690, y + 12, 11, 'rgba(255,255,255,0.5)'); });
+    button(30, 360, 110, 28, 'BACK', '#aaaaaa', close);
+  }
+  function drawDaily() {
+    bg('DAILY CHALLENGE', '#ffd24a'); const c = challenge(), D = S.daily;
+    txt('TODAY’S GOAL', W / 2, 115, 12, 'rgba(255,255,255,0.55)', 'center'); glow(c.text, W / 2, 160, 26, '#ffd24a', 'center', 10);
+    bar(200, 190, 400, 18, c.cur / c.goal, D.done ? '#66ff99' : '#ffd24a'); txt(D.done ? 'COMPLETE ✓' : c.fmt(Math.min(c.cur, c.goal * 99)), W / 2, 240, 16, D.done ? '#66ff99' : '#fff', 'center', true);
+    txt('Streak: ' + S.streak.n + ' day' + (S.streak.n === 1 ? '' : 's') + '    Best: ' + S.streak.best, W / 2, 285, 14, '#fff', 'center'); txt('A new challenge appears every day. Finish one each day to build your streak!', W / 2, 315, 11, 'rgba(255,255,255,0.5)', 'center');
+    button(30, 360, 110, 28, 'BACK', '#aaaaaa', close);
+  }
+  // friends
+  function fConnect() {
+    if (fws) return; fwState = 'connecting';
+    try { fws = new WebSocket(Online.serverUrl()); } catch (e) { fwState = 'failed'; return; }
+    fws.onopen = () => { fwState = 'open'; let n = ''; try { n = localStorage.getItem('arcadeName') || ''; } catch (e) {} fws.send(JSON.stringify({ t: 'hello', name: n || 'Guest' })); fAsk(); };
+    fws.onmessage = (e) => { let m; try { m = JSON.parse(e.data); } catch (x) { return; } if (m.t === 'where') fwhere = m.r || []; };
+    fws.onclose = () => { fws = null; fwState = fwState === 'open' ? 'lost' : 'failed'; }; fws.onerror = () => {};
+  }
+  const fAsk = () => { if (fws && fws.readyState === 1 && friends.length) fws.send(JSON.stringify({ t: 'where', names: friends })); };
+  function fClose() { if (fws) { try { fws.onclose = null; fws.close(); } catch (e) {} fws = null; } fwState = 'idle'; }
+  function addFriend() { const n = input.trim().slice(0, 12); input = ''; if (n.length < 2 || friends.some(f => f.toLowerCase() === n.toLowerCase()) || friends.length >= 12) return; friends.push(n); lsSet('arcade_friends', friends); fAsk(); }
+  function drawFriends() {
+    bg('FRIENDS', '#66ff99'); if (++fwTimer % 240 === 0) fAsk();
+    let me = ''; try { me = localStorage.getItem('arcadeName') || ''; } catch (e) {}
+    txt(me ? 'You are: ' + me : 'Pick a username in any online game first so friends can find you!', 40, 86, 11, me ? '#66ff99' : '#ffd24a');
+    txt(fwState === 'open' ? 'connected' : fwState === 'connecting' ? 'connecting...' : 'server not reachable', W - 40, 86, 10, fwState === 'open' ? 'rgba(102,255,153,0.6)' : '#ff8888', 'right');
+    if (!friends.length) txt('No friends yet. Type their username below and press ENTER.', W / 2, 190, 13, 'rgba(255,255,255,0.5)', 'center');
+    friends.forEach((f, i) => {
+      const y = 98 + i * 21, w = fwhere.find(r => r.name.toLowerCase() === f.toLowerCase()); ctx.fillStyle = 'rgba(255,255,255,0.05)'; rr(40, y, 720, 19, 5); ctx.fill();
+      txt(f, 52, y + 14, 12, '#fff', 'left', true);
+      let st = '...', col = 'rgba(255,255,255,0.4)', joinCode = null, lab = '';
+      if (w) { if (!w.on) { st = 'offline'; col = 'rgba(255,255,255,0.35)'; } else if (!w.game) { st = 'online'; col = '#66ff99'; } else if (w.pub && w.code) { const d = OnlineGames[w.game]; st = (d ? d.title : w.game) + (w.started ? ' (playing)' : ' (lobby)'); col = '#ffd24a'; joinCode = w.code; lab = w.started ? 'WATCH' : 'JOIN'; } else { st = 'in a private room'; col = '#b266ff'; } }
+      txt(st, 300, y + 14, 11, col);
+      if (joinCode) button(620, y, 70, 19, lab, '#66ff99', () => { const g = fwhere.find(r => r.name.toLowerCase() === f.toLowerCase()); fClose(); stopLoop(); Online.start(g.game, () => showMenu(), { join: joinCode }); }, { size: 10 });
+      button(700, y, 54, 19, 'remove', '#ff6677', () => { friends = friends.filter(x => x !== f); lsSet('arcade_friends', friends); }, { size: 9 });
+    });
+    ctx.strokeStyle = '#66ff99'; ctx.lineWidth = 2; ctx.fillStyle = 'rgba(255,255,255,0.05)'; rr(40, 360, 300, 28, 6); ctx.fill(); ctx.stroke();
+    txt(input ? input + (frame % 60 < 30 ? '|' : '') : (frame % 60 < 30 ? '|' : 'add a friend’s username'), 50, 379, 13, input ? '#fff' : 'rgba(255,255,255,0.35)');
+    button(350, 360, 70, 28, 'ADD', '#66ff99', addFriend, { off: input.trim().length < 2 }); button(690, 360, 70, 28, 'BACK', '#aaaaaa', close);
+  }
+  function loop() { if (!running) return; animId = requestAnimationFrame(loop); frame++; btns = []; if (screen === 'settings') drawSettings(); else if (screen === 'stats') drawStats(); else if (screen === 'daily') drawDaily(); else if (screen === 'friends') drawFriends(); if (toast) { toast.shown++; } }
+  function onKey(e) {
+    if (e.code === 'Escape') { close(); return; }
+    if (screen === 'friends') { if (['Space', 'ArrowUp', 'ArrowDown'].includes(e.code)) e.preventDefault(); if (e.key === 'Backspace') input = input.slice(0, -1); else if (e.key === 'Enter') addFriend(); else if (e.key.length === 1 && /[A-Za-z0-9 _\-]/.test(e.key) && input.length < 12) input += e.key; }
+  }
+  const hit = (p) => { for (let i = btns.length - 1; i >= 0; i--) { const b = btns[i]; if (p.x >= b.x && p.x <= b.x + b.w && p.y >= b.y && p.y <= b.y + b.h) return b; } return null; };
+  function onMove(e) { const b = hit(pos(e.clientX, e.clientY)); hov = b && !b.off ? b : null; canvas.style.cursor = hov ? 'pointer' : 'default'; }
+  function onClick(e) { const b = hit(pos(e.clientX, e.clientY)); if (b && !b.off && b.fn) b.fn(); }
+  function stopLoop() { running = false; if (animId) cancelAnimationFrame(animId); animId = null; document.removeEventListener('keydown', onKey); canvas.removeEventListener('mousemove', onMove); canvas.removeEventListener('click', onClick); canvas.style.cursor = 'default'; }
+  function close() { fClose(); stopLoop(); showMenu(); }
+  function open(id) { stopLoop(); running = true; screen = id; frame = 0; input = ''; hov = null; hideTouchControls(); document.addEventListener('keydown', onKey); canvas.addEventListener('mousemove', onMove); canvas.addEventListener('click', onClick); if (id === 'friends') { fwhere = []; fConnect(); } animId = requestAnimationFrame(loop); }
+
+  // ── Phone controls: on-screen buttons that press the same keys as a keyboard ──
+  const pad = document.createElement('div');
+  pad.style.cssText = 'position:fixed;left:0;right:0;bottom:0;height:0;z-index:50;display:none;touch-action:none;user-select:none;-webkit-user-select:none;';
+  const BTN = [['◀', 'ArrowLeft', 'left:10px;bottom:62px'], ['▶', 'ArrowRight', 'left:124px;bottom:62px'], ['▲', 'ArrowUp', 'left:67px;bottom:116px'], ['▼', 'ArrowDown', 'left:67px;bottom:8px'],
+    ['SPACE', 'Space', 'right:10px;bottom:62px;width:76px'], ['F', 'KeyF', 'right:96px;bottom:8px'], ['G', 'KeyG', 'right:96px;bottom:116px'], ['SHIFT', 'ShiftLeft', 'right:10px;bottom:8px;width:76px'], ['OK', 'Enter', 'right:96px;bottom:62px'], ['ESC', 'Escape', 'right:10px;top:-' + (window.innerHeight - 52) + 'px;width:54px;height:34px']];
+  BTN.forEach(([l, code, css]) => {
+    const b = document.createElement('div'); b.textContent = l; b.style.cssText = 'position:absolute;width:50px;height:50px;border-radius:12px;border:2px solid rgba(122,216,255,0.7);background:rgba(10,6,38,0.55);color:#bfeaff;font:bold 13px monospace;display:flex;align-items:center;justify-content:center;touch-action:none;' + css;
+    const k = (d) => document.dispatchEvent(new KeyboardEvent(d ? 'keydown' : 'keyup', { code, key: l.length === 1 ? l : code, bubbles: true }));
+    b.addEventListener('pointerdown', (e) => { e.preventDefault(); b.style.background = 'rgba(122,216,255,0.45)'; k(true); }); ['pointerup', 'pointercancel', 'pointerleave'].forEach(ev => b.addEventListener(ev, () => { if (b.style.background.indexOf('0.45') >= 0) { b.style.background = 'rgba(10,6,38,0.55)'; k(false); } }));
+    pad.appendChild(b);
+  });
+  document.body.appendChild(pad);
+  setInterval(() => { const want = (SET.touch === 'on' || (SET.touch === 'auto' && isTouch)) && typeof menuAnimFrame !== 'undefined' && !menuAnimFrame && !running; pad.style.display = want ? 'block' : 'none'; if (want) pad.lastChild.style.top = (-(window.innerHeight) + 14) + 'px'; }, 300);
+
+  return { drawButtons, cardMark, sortGames, Stats, open, SET };
 })();
 
 </script>

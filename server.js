@@ -40,6 +40,15 @@ function cleanName(n) {
   if (!n || BAD.some(b => low.includes(b))) n = 'Player' + Math.floor(100 + Math.random() * 900);
   return n;
 }
+
+function cleanChat(t) {
+  t = String(t || '').replace(/[\u0000-\u001f\u007f]/g, '').replace(/\s+/g, ' ').trim().slice(0, 60);
+  if (!t) return '';
+  const low = t.toLowerCase().replace(/[^a-z]/g, '');
+  if (BAD.some(b => low.includes(b))) return '';
+  if (/https?:|www\.|\.com|\.net|\.gg|@|\d{5,}/i.test(t)) return '';   // no links, handles or phone numbers
+  return t;
+}
 const send = (c, m) => { if (c && c.ws.readyState === 1) c.ws.send(JSON.stringify(m)); };
 function newCode() {
   const L = 'ABCDEFGHJKLMNPQRSTUVWXYZ';
@@ -138,6 +147,26 @@ wss.on('connection', (ws) => {
           while (room.players.length > maxPlayers(room)) { const id = room.players[room.players.length - 1]; const o = clients.get(id); room.players.pop(); o.room = null; send(o, { t: 'kicked', msg: 'The room got smaller.' }); }
         }
         room.players.forEach(id => { if (GAMES[room.game].teams) clients.get(id).team = -1; }); balanceTeams(room); broadcastRoom(room); break;
+      }
+      case 'chat': {
+        if (!room) return; const now2 = Date.now(); if (now2 - (c.lastChat || 0) < 900) return; c.lastChat = now2;
+        const text = cleanChat(m.text); if (!text) return;
+        room.players.concat(room.spec || []).forEach(id => send(clients.get(id), { t: 'chat', id: c.id, name: c.name, text })); break;
+      }
+      case 'emo': {
+        if (!room || c.spec) return; const now3 = Date.now(); if (now3 - (c.lastEmo || 0) < 1200) return; c.lastEmo = now3;
+        const e = Math.max(0, Math.min(3, m.e | 0));
+        room.players.concat(room.spec || []).forEach(id => send(clients.get(id), { t: 'emo', id: c.id, name: c.name, e })); break;
+      }
+      case 'where': {
+        const want = (Array.isArray(m.names) ? m.names : []).slice(0, 20).map(n => String(n || '').toLowerCase().slice(0, 12)); const out = [];
+        for (const n of want) {
+          let found = null; for (const o of clients.values()) if (o.name && o.name.toLowerCase() === n && o !== c) { found = o; break; }
+          if (!found) { out.push({ name: n, on: false }); continue; }
+          const fr = found.room ? rooms.get(found.room) : null;
+          out.push({ name: found.name, on: true, game: fr ? fr.game : null, pub: fr ? !!fr.pub : false, code: fr && fr.pub ? fr.code : null, started: fr ? !!fr.started : false });
+        }
+        send(c, { t: 'where', r: out }); break;
       }
       case 'ready': if (room && !c.spec) { c.ready = !!m.v; broadcastRoom(room); } break;
       case 'pub': if (room && room.host === c.id) { room.pub = !!m.pub; broadcastRoom(room); } break;
