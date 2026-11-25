@@ -10044,18 +10044,36 @@ const Hub = (() => {
     if (fws) return; fwState = 'connecting';
     try { fws = new WebSocket(Online.serverUrl()); } catch (e) { fwState = 'failed'; return; }
     fws.onopen = () => { fwState = 'open'; let n = ''; try { n = localStorage.getItem('arcadeName') || ''; } catch (e) {} fws.send(JSON.stringify({ t: 'hello', name: n || 'Guest' })); fAsk(); };
-    fws.onmessage = (e) => { let m; try { m = JSON.parse(e.data); } catch (x) { return; } if (m.t === 'where') fwhere = m.r || []; };
+    fws.onmessage = (e) => { let m; try { m = JSON.parse(e.data); } catch (x) { return; }
+      if (m.t !== 'where') return; const r = m.r || [];
+      if (pendingAdd && r.length === 1 && r[0].name.toLowerCase() === pendingAdd.toLowerCase()) {
+        const who = r[0], n = pendingAdd; pendingAdd = null;
+        if (!who.on) fSay('Nobody called ' + n + ' is online right now. Ask them to open the arcade, then try again.');
+        else { friends.push(who.name); lsSet('arcade_friends', friends); fSay('Added ' + who.name + '!', true); fAsk(); }
+        return;
+      }
+      fwhere = r; };
     fws.onclose = () => { fws = null; fwState = fwState === 'open' ? 'lost' : 'failed'; }; fws.onerror = () => {};
   }
   const fAsk = () => { if (fws && fws.readyState === 1 && friends.length) fws.send(JSON.stringify({ t: 'where', names: friends })); };
   function fClose() { if (fws) { try { fws.onclose = null; fws.close(); } catch (e) {} fws = null; } fwState = 'idle'; }
-  function addFriend() { const n = input.trim().slice(0, 12); input = ''; if (n.length < 2 || friends.some(f => f.toLowerCase() === n.toLowerCase()) || friends.length >= 12) return; friends.push(n); lsSet('arcade_friends', friends); fAsk(); }
+  let pendingAdd = null, fmsg = '', fmsgOk = false, fmsgT = 0;
+  const fSay = (s, ok) => { fmsg = s; fmsgOk = !!ok; fmsgT = 300; };
+  function addFriend() {
+    const n = input.trim().slice(0, 12); if (n.length < 2) return; input = '';
+    let me = ''; try { me = localStorage.getItem('arcadeName') || ''; } catch (e) {}
+    if (n.toLowerCase() === me.toLowerCase()) { fSay('That\u2019s you!'); return; }
+    if (friends.some(f => f.toLowerCase() === n.toLowerCase())) { fSay(n + ' is already on your list.'); return; }
+    if (friends.length >= 12) { fSay('Your list is full (12 friends).'); return; }
+    if (!fws || fws.readyState !== 1) { fSay('Not connected to the server yet. Try again in a moment.'); return; }
+    pendingAdd = n; fSay('Checking if ' + n + ' is online...', true); fws.send(JSON.stringify({ t: 'where', names: [n] }));
+  }
   function drawFriends() {
     bg('FRIENDS', '#66ff99'); if (++fwTimer % 240 === 0) fAsk();
     let me = ''; try { me = localStorage.getItem('arcadeName') || ''; } catch (e) {}
     txt(me ? 'You are: ' + me : 'Pick a username in any online game first so friends can find you!', 40, 86, 11, me ? '#66ff99' : '#ffd24a');
     txt(fwState === 'open' ? 'connected' : fwState === 'connecting' ? 'connecting...' : 'server not reachable', W - 40, 86, 10, fwState === 'open' ? 'rgba(102,255,153,0.6)' : '#ff8888', 'right');
-    if (!friends.length) txt('No friends yet. Type their username below and press ENTER.', W / 2, 190, 13, 'rgba(255,255,255,0.5)', 'center');
+    if (!friends.length) txt('No friends yet. Type a username below (they must be online) and press ENTER.', W / 2, 190, 13, 'rgba(255,255,255,0.5)', 'center');
     friends.forEach((f, i) => {
       const y = 98 + i * 21, w = fwhere.find(r => r.name.toLowerCase() === f.toLowerCase()); ctx.fillStyle = 'rgba(255,255,255,0.05)'; rr(40, y, 720, 19, 5); ctx.fill();
       txt(f, 52, y + 14, 12, '#fff', 'left', true);
@@ -10065,6 +10083,7 @@ const Hub = (() => {
       if (joinCode) button(620, y, 70, 19, lab, '#66ff99', () => { const g = fwhere.find(r => r.name.toLowerCase() === f.toLowerCase()); fClose(); stopLoop(); Online.start(g.game, () => showMenu(), { join: joinCode }); }, { size: 10 });
       button(700, y, 54, 19, 'remove', '#ff6677', () => { friends = friends.filter(x => x !== f); lsSet('arcade_friends', friends); }, { size: 9 });
     });
+    if (fmsgT > 0) { fmsgT--; txt(fmsg, 40, 352, 11, fmsgOk ? '#66ff99' : '#ff8888'); }
     ctx.strokeStyle = '#66ff99'; ctx.lineWidth = 2; ctx.fillStyle = 'rgba(255,255,255,0.05)'; rr(40, 360, 300, 28, 6); ctx.fill(); ctx.stroke();
     txt(input ? input + (frame % 60 < 30 ? '|' : '') : (frame % 60 < 30 ? '|' : 'add a friend’s username'), 50, 379, 13, input ? '#fff' : 'rgba(255,255,255,0.35)');
     button(350, 360, 70, 28, 'ADD', '#66ff99', addFriend, { off: input.trim().length < 2 }); button(690, 360, 70, 28, 'BACK', '#aaaaaa', close);
@@ -10079,7 +10098,7 @@ const Hub = (() => {
   function onClick(e) { const b = hit(pos(e.clientX, e.clientY)); if (b && !b.off && b.fn) b.fn(); }
   function stopLoop() { running = false; if (animId) cancelAnimationFrame(animId); animId = null; document.removeEventListener('keydown', onKey); canvas.removeEventListener('mousemove', onMove); canvas.removeEventListener('click', onClick); canvas.style.cursor = 'default'; }
   function close() { fClose(); stopLoop(); showMenu(); }
-  function open(id) { stopLoop(); running = true; screen = id; frame = 0; input = ''; hov = null; hideTouchControls(); document.addEventListener('keydown', onKey); canvas.addEventListener('mousemove', onMove); canvas.addEventListener('click', onClick); if (id === 'friends') { fwhere = []; fConnect(); } animId = requestAnimationFrame(loop); }
+  function open(id) { stopLoop(); running = true; screen = id; frame = 0; input = ''; hov = null; hideTouchControls(); document.addEventListener('keydown', onKey); canvas.addEventListener('mousemove', onMove); canvas.addEventListener('click', onClick); if (id === 'friends') { fwhere = []; pendingAdd = null; fmsg = ''; fmsgT = 0; fConnect(); } animId = requestAnimationFrame(loop); }
 
   // ── Phone controls: on-screen buttons that press the same keys as a keyboard ──
   const pad = document.createElement('div');
