@@ -9913,7 +9913,7 @@ const Hub = (() => {
   // ── Settings + global volume (every sound in the arcade goes through one master gain) ──
   const SET = Object.assign({ vol: 0.8, mute: false, chat: true, touch: 'auto' }, lsGet('arcade_settings', {}));
   const masters = new Set();
-  function applyVol() { masters.forEach(g => { try { g.gain.value = SET.mute ? 0 : SET.vol; } catch (e) {} }); }
+  let applyVol = function () { masters.forEach(g => { try { g.gain.value = SET.mute ? 0 : SET.vol; } catch (e) {} }); };
   function saveSettings() { lsSet('arcade_settings', SET); try { localStorage.setItem('arcade_chat', SET.chat ? 'on' : 'off'); } catch (e) {} applyVol(); }
   try {
     if (typeof AudioNode !== 'undefined' && typeof AudioDestinationNode !== 'undefined') {
@@ -10012,6 +10012,89 @@ const Hub = (() => {
   function bg(title, col) { const g = ctx.createLinearGradient(0, 0, 0, H); g.addColorStop(0, '#030010'); g.addColorStop(1, '#0f0036'); ctx.fillStyle = g; ctx.fillRect(0, 0, W, H); glow(title, W / 2, 50, 30, '#fff', 'center', 14); ctx.strokeStyle = col; ctx.lineWidth = 2; ctx.shadowColor = col; ctx.shadowBlur = 8; ctx.beginPath(); ctx.moveTo(W / 2 - 80, 62); ctx.lineTo(W / 2 + 80, 62); ctx.stroke(); ctx.shadowBlur = 0; }
   const bar = (x, y, w, h, v, col) => { ctx.fillStyle = 'rgba(255,255,255,0.12)'; rr(x, y, w, h, h / 2); ctx.fill(); if (v > 0) { ctx.fillStyle = col; ctx.shadowColor = col; ctx.shadowBlur = 8; rr(x, y, Math.max(h, w * Math.min(1, v)), h, h / 2); ctx.fill(); ctx.shadowBlur = 0; } };
 
+
+  // ── Background music: upload an mp3/mp4 (kept in this browser) or play a YouTube link through YouTube's own embedded player ──
+  const MU = Object.assign({ vol: 0.5, on: false, kind: null, id: '', name: '' }, lsGet('arcade_music', {}));
+  const au = new Audio(); au.loop = true; au.preload = 'auto';
+  let yt = null, ytReady = false, ytWanted = null, mMsg = '', mMsgOk = false, mMsgT = 0, mPlaying = false, blobUrl = null;
+  const saveMu = () => lsSet('arcade_music', MU);
+  const mSay = (s, ok) => { mMsg = s; mMsgOk = !!ok; mMsgT = 420; };
+  function muVol() { const v = SET.mute ? 0 : MU.vol; au.volume = Math.max(0, Math.min(1, v)); try { if (yt && ytReady) yt.setVolume(Math.round(v * 100)); } catch (e) {} }
+  const _applyVol = applyVol; applyVol = function () { _applyVol(); muVol(); };
+  function idb() { return new Promise((res, rej) => { const r = indexedDB.open('arcade_music_db', 1); r.onupgradeneeded = () => r.result.createObjectStore('f'); r.onsuccess = () => res(r.result); r.onerror = () => rej(r.error); }); }
+  async function idbPut(k, v) { const d = await idb(); return new Promise((res, rej) => { const t = d.transaction('f', 'readwrite'); t.objectStore('f').put(v, k); t.oncomplete = res; t.onerror = () => rej(t.error); }); }
+  async function idbGet(k) { const d = await idb(); return new Promise((res, rej) => { const q = d.transaction('f').objectStore('f').get(k); q.onsuccess = () => res(q.result); q.onerror = () => rej(q.error); }); }
+  function ytId(s) {
+    s = String(s || '').trim(); let m;
+    if ((m = s.match(/(?:youtu\.be\/|youtube\.com\/(?:embed\/|shorts\/|live\/)|[?&]v=)([A-Za-z0-9_-]{11})/))) return m[1];
+    return /^[A-Za-z0-9_-]{11}$/.test(s) ? s : null;
+  }
+  function loadYT(cb) {
+    if (window.YT && YT.Player) return cb();
+    if (!document.getElementById('yt-api')) { const s = document.createElement('script'); s.id = 'yt-api'; s.src = 'https://www.youtube.com/iframe_api'; s.onerror = () => mSay('Could not reach YouTube. Check your internet.'); document.head.appendChild(s); }
+    const prev = window.onYouTubeIframeAPIReady; window.onYouTubeIframeAPIReady = () => { if (prev) prev(); cb(); };
+  }
+  function killYT() { try { if (yt) yt.destroy(); } catch (e) {} yt = null; ytReady = false; const d = document.getElementById('yt-holder'); if (d) d.remove(); }
+  function playYT(id, autoplay) {
+    au.pause(); killYT(); mPlaying = false;
+    const holder = document.createElement('div'); holder.id = 'yt-holder'; holder.style.cssText = 'position:fixed;left:-500px;top:0;width:220px;height:220px;opacity:0.01;pointer-events:none;'; const inner = document.createElement('div'); holder.appendChild(inner); document.body.appendChild(holder);
+    loadYT(() => {
+      yt = new YT.Player(inner, { width: 220, height: 220, videoId: id, playerVars: { autoplay: autoplay ? 1 : 0, loop: 1, playlist: id, controls: 0, playsinline: 1 },
+        events: {
+          onReady: () => { ytReady = true; muVol(); try { const t = yt.getVideoData().title; if (t) { MU.name = t; saveMu(); } } catch (e) {} if (autoplay) { try { yt.playVideo(); } catch (e) {} } },
+          onStateChange: (e) => { mPlaying = e.data === 1; if (e.data === 0) { try { yt.playVideo(); } catch (x) {} } try { const t = yt.getVideoData().title; if (t && t !== MU.name) { MU.name = t; saveMu(); } } catch (x) {} },
+          onError: (e) => { mPlaying = false; mSay(e.data === 101 || e.data === 150 ? 'That video does not allow playing outside YouTube. Try another one.' : 'YouTube could not play that video.'); },
+        } });
+    });
+  }
+  async function playFile(blob, name) {
+    killYT(); if (blobUrl) URL.revokeObjectURL(blobUrl); blobUrl = URL.createObjectURL(blob); au.src = blobUrl; muVol();
+    try { await au.play(); mPlaying = true; } catch (e) { mPlaying = false; mSay('Press PLAY to start the music.', true); }
+  }
+  async function musicToggle() {
+    if (mPlaying) { au.pause(); try { if (yt && ytReady) yt.pauseVideo(); } catch (e) {} mPlaying = false; MU.on = false; saveMu(); return; }
+    MU.on = true; saveMu();
+    if (MU.kind === 'yt') { if (yt && ytReady) { try { yt.playVideo(); mPlaying = true; } catch (e) {} } else playYT(MU.id, true); }
+    else if (MU.kind === 'file') { if (au.src) { try { await au.play(); mPlaying = true; } catch (e) {} } else { const b = await idbGet('track').catch(() => null); if (b) await playFile(b, MU.name); else mSay('Your music file is missing. Upload it again.'); } }
+    else mSay('Upload a file or paste a YouTube link first.');
+  }
+  function musicRemove() { au.pause(); au.removeAttribute('src'); killYT(); mPlaying = false; MU.kind = null; MU.id = ''; MU.name = ''; MU.on = false; saveMu(); idbPut('track', null).catch(() => {}); mSay('Music removed.', true); }
+  function loadLink() {
+    const id = ytId(mInput); if (!id) { mSay('That does not look like a YouTube link.'); return; }
+    mInput = ''; MU.kind = 'yt'; MU.id = id; MU.name = 'YouTube video'; MU.on = true; saveMu(); playYT(id, true); mSay('Loading... (some videos cannot be played here)', true);
+  }
+  const fileIn = document.createElement('input'); fileIn.type = 'file'; fileIn.accept = 'audio/*,video/mp4,video/webm,.mp3,.mp4,.m4a,.wav,.ogg,.aac,.webm'; fileIn.style.display = 'none'; document.body.appendChild(fileIn);
+  fileIn.addEventListener('change', async () => {
+    const f = fileIn.files && fileIn.files[0]; fileIn.value = ''; if (!f) return;
+    if (f.size > 80 * 1024 * 1024) { mSay('That file is too big (max 80 MB).'); return; }
+    try { await idbPut('track', f); } catch (e) { mSay('Could not save the file here, but it will play until you close the page.', true); }
+    MU.kind = 'file'; MU.id = ''; MU.name = f.name.slice(0, 60); MU.on = true; saveMu(); await playFile(f, f.name); if (mPlaying) mSay('Playing ' + MU.name, true);
+  });
+  // start again on the first click/key of the next visit (browsers block music until you interact)
+  function resumeOnGesture() {
+    const go = async () => { document.removeEventListener('pointerdown', go, true); document.removeEventListener('keydown', go, true); if (!MU.on || mPlaying) return;
+      if (MU.kind === 'yt') playYT(MU.id, true); else if (MU.kind === 'file') { const b = await idbGet('track').catch(() => null); if (b) await playFile(b, MU.name); } };
+    document.addEventListener('pointerdown', go, true); document.addEventListener('keydown', go, true);
+  }
+  if (MU.on && MU.kind) resumeOnGesture();
+  let mInput = '';
+  function drawMusic() {
+    bg('MUSIC', '#ff66cc'); muVol();
+    txt('NOW PLAYING', 60, 98, 10, 'rgba(255,255,255,0.5)');
+    const nm = MU.kind ? (MU.kind === 'yt' ? '▶ ' : '♪ ') + MU.name : 'nothing yet'; glow(nm.length > 58 ? nm.slice(0, 57) + '…' : nm, 60, 120, 16, MU.kind ? '#ff66cc' : 'rgba(255,255,255,0.4)', 'left', MU.kind ? 8 : 0);
+    button(60, 136, 120, 34, mPlaying ? 'PAUSE' : 'PLAY', '#66ff99', musicToggle, { off: !MU.kind }); button(190, 136, 160, 34, 'REMOVE MUSIC', '#ff6677', musicRemove, { off: !MU.kind, size: 11 });
+    txt('VOLUME', 400, 158, 13, '#fff', 'left', true); button(480, 136, 34, 34, '-', '#ff66cc', () => { MU.vol = Math.max(0, Math.round((MU.vol - 0.1) * 10) / 10); saveMu(); muVol(); }, { size: 18 });
+    txt(Math.round(MU.vol * 100) + '%', 545, 158, 14, '#fff', 'center', true); button(576, 136, 34, 34, '+', '#ff66cc', () => { MU.vol = Math.min(1, Math.round((MU.vol + 0.1) * 10) / 10); saveMu(); muVol(); }, { size: 18 });
+    ctx.strokeStyle = 'rgba(255,255,255,0.15)'; ctx.lineWidth = 1; ctx.beginPath(); ctx.moveTo(60, 190); ctx.lineTo(740, 190); ctx.stroke();
+    txt('FROM YOUR COMPUTER', 60, 214, 11, '#ffd24a', 'left', true); button(60, 222, 290, 36, 'UPLOAD MP3 / MP4 FILE', '#ffd24a', () => fileIn.click(), { size: 12 }); txt('plays the sound; saved in this browser', 366, 245, 10, 'rgba(255,255,255,0.45)');
+    txt('FROM YOUTUBE', 60, 290, 11, '#7ad8ff', 'left', true);
+    ctx.strokeStyle = '#7ad8ff'; ctx.lineWidth = 2; ctx.fillStyle = 'rgba(255,255,255,0.05)'; rr(60, 298, 520, 32, 6); ctx.fill(); ctx.stroke();
+    const sh = mInput.length > 54 ? '…' + mInput.slice(-53) : mInput; txt(sh ? sh + (frame % 60 < 30 ? '|' : '') : (frame % 60 < 30 ? '|' : 'paste a YouTube link here (Ctrl+V)'), 70, 319, 12, sh ? '#fff' : 'rgba(255,255,255,0.35)');
+    button(590, 298, 150, 32, 'LOAD LINK', '#7ad8ff', loadLink, { off: mInput.trim().length < 5 });
+    if (mMsgT > 0) { mMsgT--; txt(mMsg, 60, 350, 11, mMsgOk ? '#66ff99' : '#ff8888'); }
+    button(30, 360, 110, 28, 'BACK', '#aaaaaa', () => open('settings'));
+  }
+
   function drawSettings() {
     bg('SETTINGS', '#7ad8ff'); const rows = [['SOUND', SET.mute ? 'OFF' : 'ON', () => { SET.mute = !SET.mute; saveSettings(); }, SET.mute ? '#ff6677' : '#66ff99']];
     rows.forEach(r => { txt(r[0], 140, 118, 15, '#fff', 'left', true); button(450, 98, 110, 32, r[1], r[3], r[2]); });
@@ -10020,6 +10103,7 @@ const Hub = (() => {
     txt('FULLSCREEN', 140, 218, 15, '#fff', 'left', true); button(450, 198, 110, 32, document.fullscreenElement ? 'EXIT' : 'GO', '#7ad8ff', () => { try { if (document.fullscreenElement) document.exitFullscreen(); else document.documentElement.requestFullscreen(); } catch (e) {} });
     txt('ROOM CHAT', 140, 268, 15, '#fff', 'left', true); txt('show chat from other players', 140, 284, 10, 'rgba(255,255,255,0.45)'); button(450, 248, 110, 32, SET.chat ? 'ON' : 'OFF', SET.chat ? '#66ff99' : '#ff6677', () => { SET.chat = !SET.chat; saveSettings(); });
     txt('PHONE CONTROLS', 140, 318, 15, '#fff', 'left', true); txt('on-screen buttons (auto = phones only)', 140, 334, 10, 'rgba(255,255,255,0.45)'); button(450, 298, 110, 32, SET.touch.toUpperCase(), '#ffd24a', () => { SET.touch = SET.touch === 'auto' ? 'on' : SET.touch === 'on' ? 'off' : 'auto'; saveSettings(); });
+    button(600, 98, 110, 32, 'MUSIC ♪', '#ff66cc', () => open('music'));
     button(30, 354, 110, 32, 'BACK', '#aaaaaa', close);
   }
   function drawStats() {
@@ -10088,9 +10172,10 @@ const Hub = (() => {
     txt(input ? input + (frame % 60 < 30 ? '|' : '') : (frame % 60 < 30 ? '|' : 'add a friend’s username'), 50, 379, 13, input ? '#fff' : 'rgba(255,255,255,0.35)');
     button(350, 360, 70, 28, 'ADD', '#66ff99', addFriend, { off: input.trim().length < 2 }); button(690, 360, 70, 28, 'BACK', '#aaaaaa', close);
   }
-  function loop() { if (!running) return; animId = requestAnimationFrame(loop); frame++; btns = []; if (screen === 'settings') drawSettings(); else if (screen === 'stats') drawStats(); else if (screen === 'daily') drawDaily(); else if (screen === 'friends') drawFriends(); if (toast) { toast.shown++; } }
+  function loop() { if (!running) return; animId = requestAnimationFrame(loop); frame++; btns = []; if (screen === 'settings') drawSettings(); else if (screen === 'stats') drawStats(); else if (screen === 'daily') drawDaily(); else if (screen === 'music') drawMusic(); else if (screen === 'friends') drawFriends(); if (toast) { toast.shown++; } }
   function onKey(e) {
-    if (e.code === 'Escape') { close(); return; }
+    if (e.code === 'Escape') { if (screen === 'music') open('settings'); else close(); return; }
+    if (screen === 'music') { if (e.key === 'Backspace') mInput = mInput.slice(0, -1); else if (e.key === 'Enter') loadLink(); else if (e.key.length === 1 && !e.ctrlKey && !e.metaKey && mInput.length < 200) mInput += e.key; return; }
     if (screen === 'friends') { if (['Space', 'ArrowUp', 'ArrowDown'].includes(e.code)) e.preventDefault(); if (e.key === 'Backspace') input = input.slice(0, -1); else if (e.key === 'Enter') addFriend(); else if (e.key.length === 1 && /[A-Za-z0-9 _\-]/.test(e.key) && input.length < 12) input += e.key; }
   }
   const hit = (p) => { for (let i = btns.length - 1; i >= 0; i--) { const b = btns[i]; if (p.x >= b.x && p.x <= b.x + b.w && p.y >= b.y && p.y <= b.y + b.h) return b; } return null; };
@@ -10098,6 +10183,7 @@ const Hub = (() => {
   function onClick(e) { const b = hit(pos(e.clientX, e.clientY)); if (b && !b.off && b.fn) b.fn(); }
   function stopLoop() { running = false; if (animId) cancelAnimationFrame(animId); animId = null; document.removeEventListener('keydown', onKey); canvas.removeEventListener('mousemove', onMove); canvas.removeEventListener('click', onClick); canvas.style.cursor = 'default'; }
   function close() { fClose(); stopLoop(); showMenu(); }
+  document.addEventListener('paste', (e) => { if (running && screen === 'music') { const t = (e.clipboardData && e.clipboardData.getData('text')) || ''; mInput = (mInput + t.trim()).slice(0, 200); e.preventDefault(); } });
   function open(id) { stopLoop(); running = true; screen = id; frame = 0; input = ''; hov = null; hideTouchControls(); document.addEventListener('keydown', onKey); canvas.addEventListener('mousemove', onMove); canvas.addEventListener('click', onClick); if (id === 'friends') { fwhere = []; pendingAdd = null; fmsg = ''; fmsgT = 0; fConnect(); } animId = requestAnimationFrame(loop); }
 
   // ── Phone controls: on-screen buttons that press the same keys as a keyboard ──
