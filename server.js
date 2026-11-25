@@ -12,6 +12,7 @@ const GAMES = {
   boost:   { name: 'Boost Ball',  teams: true,  maxPer: 3 },
   racer:   { name: 'Neon Racer',  teams: false, max: 6 },
   gravity: { name: 'Gravity Changer', teams: false, max: 4 },
+  snake:   { name: 'Snake Battle', teams: false, max: 6 },
 };
 const BAD = ['fuck', 'shit', 'bitch', 'cunt', 'dick', 'cock', 'penis', 'vagina', 'porn', 'sex', 'nigg', 'fag', 'rape', 'nazi', 'hitler', 'whore', 'slut', 'ass', 'damn', 'piss', 'boob', 'nude'];
 
@@ -51,10 +52,10 @@ function maxPlayers(room) {
   return g.max;
 }
 function roomInfo(room) {
-  return { code: room.code, game: room.game, host: room.host, pub: room.pub, started: room.started, settings: room.settings, max: maxPlayers(room),
-    players: room.players.map(id => { const c = clients.get(id); return { id, name: c.name, team: c.team }; }) };
+  return { code: room.code, game: room.game, host: room.host, pub: room.pub, started: room.started, settings: room.settings, max: maxPlayers(room), spec: (room.spec || []).length,
+    players: room.players.map(id => { const c = clients.get(id); return { id, name: c.name, team: c.team, ready: id === room.host ? true : !!c.ready }; }) };
 }
-function broadcastRoom(room) { const info = roomInfo(room); room.players.forEach(id => send(clients.get(id), { t: 'room', room: info })); }
+function broadcastRoom(room) { const info = roomInfo(room); room.players.concat(room.spec || []).forEach(id => send(clients.get(id), { t: 'room', room: info })); }
 function balanceTeams(room) {
   if (!GAMES[room.game].teams) { room.players.forEach(id => clients.get(id).team = 0); return; }
   const per = Math.max(1, Math.min(3, +room.settings.size || 1));
@@ -71,11 +72,12 @@ function balanceTeams(room) {
 }
 function leaveRoom(c, reason) {
   const room = c.room && rooms.get(c.room);
-  c.room = null; c.team = 0;
+  c.room = null; c.team = 0; c.ready = false;
   if (!room) return;
+  if (c.spec) { c.spec = false; room.spec = (room.spec || []).filter(id => id !== c.id); broadcastRoom(room); return; }
   room.players = room.players.filter(id => id !== c.id);
   if (room.host === c.id) {
-    room.players.forEach(id => { const o = clients.get(id); o.room = null; send(o, { t: 'closed', msg: 'The host left the room.' }); });
+    room.players.concat(room.spec || []).forEach(id => { const o = clients.get(id); o.room = null; o.spec = false; send(o, { t: 'closed', msg: 'The host left the room.' }); });
     rooms.delete(room.code);
   } else {
     if (!room.players.length) rooms.delete(room.code); else { room.players.forEach(id => send(clients.get(id), { t: 'left', id: c.id })); broadcastRoom(room); }
@@ -83,7 +85,7 @@ function leaveRoom(c, reason) {
 }
 function publicList(game) {
   const out = [];
-  rooms.forEach(r => { if (r.pub && !r.started && (!game || r.game === game) && r.players.length < maxPlayers(r)) { const h = clients.get(r.host); out.push({ code: r.code, game: r.game, host: h ? h.name : '?', n: r.players.length, max: maxPlayers(r), settings: r.settings }); } });
+  rooms.forEach(r => { if (r.pub && (!game || r.game === game) && (r.started || r.players.length < maxPlayers(r))) { const h = clients.get(r.host); out.push({ code: r.code, game: r.game, host: h ? h.name : '?', n: r.players.length, max: maxPlayers(r), settings: r.settings, started: r.started }); } });
   return out.slice(0, 30);
 }
 
@@ -113,14 +115,18 @@ wss.on('connection', (ws) => {
         const code = String(m.code || '').toUpperCase().replace(/[^A-Z]/g, '').slice(0, 4);
         const r = rooms.get(code);
         if (!r) { send(c, { t: 'err', msg: 'No room with code ' + code + '.' }); return; }
-        if (r.started) { send(c, { t: 'err', msg: 'That match already started.' }); return; }
-        if (r.players.length >= maxPlayers(r)) { send(c, { t: 'err', msg: 'That room is full.' }); return; }
         if (room) leaveRoom(c);
+        if (r.started) {
+          r.spec = r.spec || []; if (r.spec.length >= 10) { send(c, { t: 'err', msg: 'Too many people watching.' }); return; }
+          r.spec.push(c.id); c.room = code; c.spec = true; c.team = 0;
+          send(c, { t: 'start', room: roomInfo(r), seed: 0, spec: true }); broadcastRoom(r); send(clients.get(r.host), { t: 'spec' }); return;
+        }
+        if (r.players.length >= maxPlayers(r)) { send(c, { t: 'err', msg: 'That room is full.' }); return; }
         r.players.push(c.id); c.room = code; c.team = -1; balanceTeams(r); broadcastRoom(r); break;
       }
       case 'leave': leaveRoom(c); send(c, { t: 'left', id: c.id, self: true }); break;
       case 'team': {
-        if (!room || room.started || !GAMES[room.game].teams) return;
+        if (!room || c.spec || room.started || !GAMES[room.game].teams) return;
         const t = m.team === 1 ? 1 : 0, per = Math.max(1, Math.min(3, +room.settings.size || 1));
         if (room.players.filter(id => clients.get(id).team === t && id !== c.id).length >= per) return;
         c.team = t; broadcastRoom(room); break;
@@ -133,6 +139,7 @@ wss.on('connection', (ws) => {
         }
         room.players.forEach(id => { if (GAMES[room.game].teams) clients.get(id).team = -1; }); balanceTeams(room); broadcastRoom(room); break;
       }
+      case 'ready': if (room && !c.spec) { c.ready = !!m.v; broadcastRoom(room); } break;
       case 'pub': if (room && room.host === c.id) { room.pub = !!m.pub; broadcastRoom(room); } break;
       case 'kick': {
         if (!room || room.host !== c.id) return;
@@ -144,14 +151,22 @@ wss.on('connection', (ws) => {
         const g = GAMES[room.game];
         if (room.players.length < 2) { send(c, { t: 'err', msg: 'You need at least 2 players.' }); return; }
         if (g.teams) { const a = room.players.filter(id => clients.get(id).team === 0).length, b = room.players.length - a; if (!a || !b) { send(c, { t: 'err', msg: 'Each team needs at least 1 player.' }); return; } }
+        const waiting = room.players.filter(id => id !== room.host && !clients.get(id).ready);
+        if (waiting.length) { send(c, { t: 'err', msg: 'Waiting for ' + clients.get(waiting[0]).name + (waiting.length > 1 ? ' and ' + (waiting.length - 1) + ' more' : '') + ' to press READY.' }); return; }
+        room.players.forEach(id => { clients.get(id).ready = false; });
         room.started = true; broadcastRoom(room);
         room.players.forEach(id => send(clients.get(id), { t: 'start', room: roomInfo(room), seed: Math.floor(Math.random() * 1e9) }));
         break;
       }
-      case 'lobby': if (room && room.host === c.id) { room.started = false; broadcastRoom(room); room.players.forEach(id => send(clients.get(id), { t: 'lobby' })); } break;
-      case 'in': { if (!room || !room.started) return; const h = clients.get(room.host); if (h && h.id !== c.id) send(h, { t: 'in', from: c.id, d: m.d }); break; }
-      case 'st': { if (!room || room.host !== c.id) return; room.players.forEach(id => { if (id !== c.id) send(clients.get(id), { t: 'st', d: m.d }); }); break; }
-      case 'ev': { if (!room || room.host !== c.id) return; room.players.forEach(id => { if (id !== c.id) send(clients.get(id), { t: 'ev', d: m.d }); }); break; }
+      case 'lobby': if (room && room.host === c.id) {
+        (room.spec || []).forEach(id => { const o = clients.get(id); if (o) { o.room = null; o.spec = false; send(o, { t: 'closed', msg: 'The match ended.' }); } }); room.spec = [];
+        room.started = false; room.players.forEach(id => { clients.get(id).ready = false; }); broadcastRoom(room); room.players.forEach(id => send(clients.get(id), { t: 'lobby' })); } break;
+      case 'again': if (room && room.host === c.id && room.started) {
+        room.players.forEach(id => { clients.get(id).ready = false; }); broadcastRoom(room);
+        const seed = Math.floor(Math.random() * 1e9); room.players.forEach(id => send(clients.get(id), { t: 'start', room: roomInfo(room), seed })); (room.spec || []).forEach(id => send(clients.get(id), { t: 'start', room: roomInfo(room), seed, spec: true })); } break;
+      case 'in': { if (!room || !room.started || c.spec) return; const h = clients.get(room.host); if (h && h.id !== c.id) send(h, { t: 'in', from: c.id, d: m.d }); break; }
+      case 'st': { if (!room || room.host !== c.id) return; room.players.concat(room.spec || []).forEach(id => { if (id !== c.id) send(clients.get(id), { t: 'st', d: m.d }); }); break; }
+      case 'ev': { if (!room || room.host !== c.id) return; room.players.concat(room.spec || []).forEach(id => { if (id !== c.id) send(clients.get(id), { t: 'ev', d: m.d }); }); break; }
     }
   });
   ws.on('close', () => { leaveRoom(c); clients.delete(c.id); });
@@ -163,6 +178,7 @@ function sanitizeSettings(game, s) {
   if (game === 'tank') { o.size = Math.max(1, Math.min(3, +s.size || 1)); o.rounds = [3, 5, 7].includes(+s.rounds) ? +s.rounds : 5; }
   else if (game === 'boost') { o.size = Math.max(1, Math.min(3, +s.size || 1)); o.goals = [5, 10].includes(+s.goals) ? +s.goals : 5; o.mins = [1, 2, 3].includes(+s.mins) ? +s.mins : 2; }
   else if (game === 'racer') { o.track = Math.max(0, Math.min(2, +s.track || 0)); o.laps = [2, 3, 4].includes(+s.laps) ? +s.laps : 3; }
+  else if (game === 'snake') { o.speed = Math.max(1, Math.min(3, +s.speed || 2)); o.walls = s.walls === 'wrap' ? 'wrap' : 'solid'; }
   else if (game === 'gravity') { o.mode = ['versus', 'race', 'coop'].includes(s.mode) ? s.mode : 'versus'; }
   return o;
 }
