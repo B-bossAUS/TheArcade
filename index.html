@@ -8372,10 +8372,14 @@ const Online = (() => {
     try { ws = new WebSocket(serverUrl()); } catch (e) { connState = 'failed'; return; }
     ws.onopen = () => { connState = 'open'; };
     ws.onmessage = (e) => { let m; try { m = JSON.parse(e.data); } catch (x) { return; } onMsg(m); };
-    ws.onclose = () => { const was = connState; connState = was === 'open' ? 'lost' : 'failed'; if (inst) endGameLocal(); room = null; if (screen === 'room' || screen === 'game' || screen === 'browse') screen = 'hub'; if (running) say(was === 'open' ? 'Connection lost.' : 'Can’t reach the online server.'); };
+    ws.onclose = () => { const was = connState; connState = was === 'open' ? 'lost' : 'failed'; if (inst) endGameLocal(); room = null; if (was === 'open' && (screen === 'room' || screen === 'game' || screen === 'browse')) screen = 'hub'; if (running) say(was === 'open' ? 'Connection lost.' : 'Can’t reach the online server.'); };
     ws.onerror = () => {};
   }
-  const tx = (m) => { if (ws && ws.readyState === 1) ws.send(JSON.stringify(m)); };
+  const tx = (m) => {
+    if (ws && ws.readyState === 1) { ws.send(JSON.stringify(m)); return true; }
+    if (m.t !== 'list' && m.t !== 'in' && m.t !== 'st' && m.t !== 'ev' && m.t !== 'leave') say(connState === 'connecting' ? 'Still connecting... wait a few seconds (the server may be waking up).' : 'Not connected. Open the arcade from your Render link, then press RECONNECT.');
+    return false;
+  };
 
   function onMsg(m) {
     switch (m.t) {
@@ -8455,14 +8459,14 @@ const Online = (() => {
     ORDER.forEach((id, i) => {
       const d = def(id); if (!d) return;
       const x = 50 + (i % 2) * 360, y = 108 + Math.floor(i / 2) * 100;
-      button(x, y, 340, 86, d.title, d.color, () => { gameId = id; screen = 'browse'; pubNext = false; listT = 0; codeInput = ''; tx({ t: 'list', game: id }); }, { size: 20, sub: info[id], fill: false });
+      button(x, y, 340, 86, d.title, d.color, () => { gameId = id; screen = 'browse'; pubNext = false; listT = 0; codeInput = ''; if (connState !== 'open' && connState !== 'connecting') connect(); tx({ t: 'list', game: id }); }, { size: 20, sub: info[id], fill: false });
     });
     txt('Playing as:', 60, 340, 12, 'rgba(255,255,255,0.5)'); glow(myName || '...', 135, 341, 15, '#00eaff', 'left', 6);
     button(300, 322, 120, 30, 'CHANGE NAME', '#00eaff', () => { nameInput = myName; textField = 'name'; screen = 'name'; });
     button(60, 362, 120, 28, 'BACK', '#aaaaaa', exit);
     const st = connState === 'open' ? ['online', '#66ff99'] : connState === 'connecting' ? ['connecting...', '#ffd24a'] : ['offline — ' + (connState === 'lost' ? 'connection lost' : 'can’t reach server'), '#ff5566'];
     txt('● ' + st[0], W - 20, 385, 12, st[1], 'right');
-    if (connState === 'failed' || connState === 'lost') { button(W - 150, 335, 130, 30, 'RECONNECT', '#ffd24a', () => connect()); txt('Online only works from the Render link of the arcade.', W / 2, 385, 11, '#ffd24a', 'center'); }
+    if (connState === 'failed' || connState === 'lost') { button(W - 150, 335, 130, 30, 'RECONNECT', '#ffd24a', () => connect()); txt('Online only works from the Render link of the arcade.', W / 2, 308, 11, '#ffd24a', 'center'); }
   }
   function drawBrowse() {
     const d = def(gameId); bg(); glow(d.title + ' — ONLINE', W / 2, 52, 28, d.color, 'center', 14);
@@ -8481,6 +8485,12 @@ const Online = (() => {
     });
     button(50, 360, 120, 28, 'BACK', '#aaaaaa', () => { screen = 'hub'; textField = null; });
     txt('Playing as ' + myName, 250, 378, 12, 'rgba(255,255,255,0.5)');
+    if (connState !== 'open') {
+      ctx.fillStyle = 'rgba(3,0,16,0.88)'; rr(120, 150, 560, 110, 12); ctx.fill(); ctx.strokeStyle = '#ffd24a'; ctx.lineWidth = 2; ctx.stroke();
+      glow(connState === 'connecting' ? 'Connecting to the online server...' : 'Can\u2019t reach the online server', W / 2, 190, 18, '#ffd24a', 'center', 8);
+      txt(connState === 'connecting' ? 'The free server can take ~30 seconds to wake up.' : 'Open the arcade from your Render link (not Vercel).', W / 2, 215, 12, 'rgba(255,255,255,0.7)', 'center');
+      if (connState !== 'connecting') button(335, 225, 130, 28, 'RECONNECT', '#ffd24a', () => connect());
+    }
     if (--listT < 0) { listT = 120; tx({ t: 'list', game: gameId }); }
   }
   function joinCode() { if (codeInput.length === 4) tx({ t: 'join', code: codeInput }); }
