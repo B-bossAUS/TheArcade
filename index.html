@@ -599,6 +599,22 @@ const GAMES = [
     },
     game: () => Tutorial.wrap('ARENA BRAWLER', '#ff4488', () => OnlineChoice.make('brawler', () => ArenaBrawler, 'ARENA BRAWLER', '#ff4488')),
   },
+  {
+    title: 'PARTY MODE',
+    subtitle: 'Online mini-game playlist',
+    color: '#ff9f43',
+    drawIcon(cx, cy) {
+      const t = menuFrame * 0.05;
+      ctx.save(); ctx.translate(cx, cy);
+      [['#ff4488', -22, 4], ['#33aaff', 0, -6], ['#78d94c', 22, 4]].forEach(([c, x, y], i) => {
+        const by = y + Math.sin(t + i * 1.7) * 4; ctx.shadowColor = c; ctx.shadowBlur = 12; ctx.fillStyle = c; ctx.beginPath(); ctx.ellipse(x, by - 8, 9, 11, 0, 0, Math.PI * 2); ctx.fill(); ctx.shadowBlur = 0;
+        ctx.strokeStyle = 'rgba(255,255,255,0.55)'; ctx.lineWidth = 1.2; ctx.beginPath(); ctx.moveTo(x, by + 3); ctx.quadraticCurveTo(x + 4, by + 12, x - 2, by + 22); ctx.stroke();
+      });
+      ctx.fillStyle = '#ffd24a'; ctx.shadowColor = '#ffd24a'; ctx.shadowBlur = 8; for (let k = 0; k < 6; k++) { const a = t * 2 + k, r = 24 + (k % 2) * 6; ctx.fillRect(Math.cos(a) * r - 1.5, Math.sin(a) * r * 0.7 - 1.5, 3, 3); } ctx.shadowBlur = 0;
+      ctx.restore();
+    },
+    game: () => Tutorial.wrap('PARTY MODE', '#ff9f43', () => PartyEntry),
+  },
 ];
 
 function getCardBounds(i) {
@@ -6994,8 +7010,13 @@ const TankBattle = (() => {
   // ── Maze ───────────────────────────────────────────────────────────────────
 
   // ── Maps: 0 random maze, 1 open arena, 2 crossroads, 3 fortress, 4 mixed (a different one every round) ──
-  const MAPS = ['RANDOM MAZE', 'OPEN ARENA', 'CROSSROADS', 'FORTRESS', 'MIXED'];
+  const MAPS = ['RANDOM MAZE', 'OPEN ARENA', 'CROSSROADS', 'FORTRESS', 'MIXED', 'MY MAP'];
+  // 'MY MAP' = the map drawn in the Level Maker (kept in this browser); falls back to a random maze if there is none yet
+  function loadCustom() {
+    try { const o = JSON.parse(localStorage.getItem('arcade_map_tank')); if (o && o.v && o.h && o.v.length === ROWS && o.h.length === ROWS + 1 && o.v[0].length === COLS + 1 && o.h[0].length === COLS) return { v: o.v.map(r => r.map(Boolean)), h: o.h.map(r => r.map(Boolean)) }; } catch (e) {} return null;
+  }
   function genMap(kind) {
+    if (kind === 5) return loadCustom();
     if (kind === 4) kind = Math.floor(Math.random() * 4);
     if (kind === 0) return null;
     const v = Array.from({ length: ROWS }, () => Array(COLS + 1).fill(false)), h = Array.from({ length: ROWS + 1 }, () => Array(COLS).fill(false));
@@ -7571,7 +7592,8 @@ const TankBattle = (() => {
     animId = requestAnimationFrame(loop);
   }
 
-  return { start, stop, genMap, MAPS };
+  function playCustom(n) { start(); numPlayers = n; diff = 'medium'; mapSel = 5; startMatch(); }
+  return { start, stop, genMap, MAPS, playCustom };
 })();
 
 </script>
@@ -7859,7 +7881,15 @@ const NeonRacer = (() => {
     return { k, name: CARS[k].name, col: CARS[k].col, x, y, ang: p.ang, vx: 0, vy: 0, idx, lap: -1, prog: 0, lapStart: 0, bestLap: 0, lapTimes: [], done: false, doneT: 0, place: 0, nitro: 100, steer: 0, onTrack: true,
       skill: k === 0 ? 1 : DIFFS[['easy', 'medium', 'hard'][diffI]][k - 1], wob: Math.random() * 6, padT: 0, slipT: 0 };
   }
+  let rec = [], rp = null;
+  // a track drawn in the Level Maker lives in slot 6 (not shown in the track list)
+  function setCustom(pts) {
+    TRACKS[6] = { name: 'MY TRACK', col: '#ff66cc', pads: [Math.floor(N * 0.15), Math.floor(N * 0.45), Math.floor(N * 0.78)], oil: [Math.floor(N * 0.3), Math.floor(N * 0.62), Math.floor(N * 0.92)], pts: pts.map(p => [p[0], p[1]]) };
+    loadBest(); delete best[6]; saveBest();
+  }
+  function playCustom(pts) { start(); setCustom(pts); trackI = sel = 6; startRace(); }
   function startRace() {
+    rec = [];
     cl = buildTrack(TRACKS[trackI].pts); items = makeItems(TRACKS[trackI], cl);
     cars = [makeCar(0, 3), makeCar(1, 0), makeCar(2, 1), makeCar(3, 2)];
     skids = []; sparks = []; phase = 'countdown'; cd = 200; raceT = 0; finishedCount = 0; endT = 0; screen = 'race';
@@ -7925,11 +7955,45 @@ const NeonRacer = (() => {
     if ((nitro || padOn) && frameN % 2 === 0) sparks.push({ x: c.x - nhx * 12, y: c.y - nhy * 12, vx: -nhx * 1.5 + (Math.random() - 0.5), vy: -nhy * 1.5 + (Math.random() - 0.5), t: 16 });
   }
 
+  function saveLapReplay(key, lt) {
+    try { if (rec.length > 8 && rec.length < 2400 && typeof Hub !== 'undefined' && Hub.rep) { Hub.rep.put('racer_' + key, { game: 'racer', title: TRACKS[key].name, sub: 'best lap ' + fmtT(lt), col: TRACKS[key].col }, { track: key, t: lt, f: rec.slice(), pts: key === 6 ? TRACKS[6].pts : undefined }); Hub.pop('LAP REPLAY SAVED', TRACKS[key].col, TRACKS[key].name + '  ' + fmtT(lt)); } } catch (e) {}
+  }
+  // ── Replay player: watch a saved best lap again ──
+  function playReplay(d, onExit) {
+    start(); if (d.pts) setCustom(d.pts); trackI = d.track; cl = buildTrack(TRACKS[trackI].pts); items = makeItems(TRACKS[trackI], cl);
+    cars = [0, 1, 2, 3].map(k => ({ k, name: CARS[k].name, col: CARS[k].col, x: 0, y: 0, ang: 0, vx: 0, vy: 0, nitro: 100 })); skids = []; sparks = [];
+    rp = { d, i: 0, sp: 1, pause: false, end: false, exit: onExit }; screen = 'replay';
+  }
+  function stepReplay() {
+    if (!rp) return; const f = rp.d.f, L = f.length - 1;
+    if (!rp.pause) { rp.i += 0.5 * rp.sp; if (rp.i >= L) { rp.i = L; rp.pause = true; rp.end = true; } }
+    const k = Math.floor(rp.i), t = rp.i - k, A = f[k], B = f[Math.min(L, k + 1)];
+    cars.forEach((c, j) => { c.x = A[j][0] + (B[j][0] - A[j][0]) * t; c.y = A[j][1] + (B[j][1] - A[j][1]) * t; let da = B[j][2] - A[j][2]; da = Math.atan2(Math.sin(da), Math.cos(da)); c.ang = A[j][2] + da * t; });
+  }
+  function replayKey(c) {
+    if (c === 'Escape') { const ex = rp && rp.exit; rp = null; stop(); if (ex) ex(); else showMenu(); }
+    else if (c === 'Space') { if (rp.end) { rp.i = 0; rp.end = false; rp.pause = false; } else rp.pause = !rp.pause; }
+    else if (c === 'KeyR' || c === 'Enter') { rp.i = 0; rp.end = false; rp.pause = false; }
+    else if (c === 'ArrowRight' || c === 'KeyD') rp.sp = Math.min(4, rp.sp * 2);
+    else if (c === 'ArrowLeft' || c === 'KeyA') rp.sp = Math.max(0.25, rp.sp / 2);
+  }
+  function drawReplay() {
+    ctx.fillStyle = '#030010'; ctx.fillRect(0, 0, W, H);
+    STARS.forEach(s => { ctx.fillStyle = `rgba(255,255,255,${0.1 + 0.1 * Math.sin(frameN * 0.03 + s.t)})`; ctx.beginPath(); ctx.arc(s.x, s.y, s.r, 0, TAU); ctx.fill(); });
+    drawTrack(TRACKS[trackI].col); drawItems(items, frameN);
+    cars.slice().reverse().forEach(drawCar);
+    const me = cars[0]; ctx.fillStyle = '#ffffff'; ctx.beginPath(); ctx.moveTo(me.x, me.y - 22); ctx.lineTo(me.x - 4, me.y - 28); ctx.lineTo(me.x + 4, me.y - 28); ctx.closePath(); ctx.fill();
+    ctx.fillStyle = '#07041a'; ctx.fillRect(0, 0, W, HUD_H); ctx.fillStyle = TRACKS[trackI].col; ctx.shadowColor = TRACKS[trackI].col; ctx.shadowBlur = 8; ctx.fillRect(0, HUD_H - 2, W, 2); ctx.shadowBlur = 0;
+    glow('REPLAY', 16, 23, 16, '#ff66cc', 'left', 8); ctx.font = '13px monospace'; ctx.fillStyle = 'rgba(255,255,255,0.75)'; ctx.textAlign = 'left';
+    ctx.fillText(TRACKS[trackI].name + '   best lap ' + fmtT(rp.d.t) + '   speed x' + rp.sp + (rp.pause && !rp.end ? '   PAUSED' : rp.end ? '   THE END' : ''), 110, 22);
+    const L = rp.d.f.length - 1; ctx.fillStyle = 'rgba(255,255,255,0.15)'; ctx.fillRect(20, H - 14, W - 40, 4); ctx.fillStyle = '#ff66cc'; ctx.fillRect(20, H - 14, (W - 40) * (L ? rp.i / L : 0), 4);
+    ctx.font = '10px monospace'; ctx.fillStyle = 'rgba(255,255,255,0.55)'; ctx.textAlign = 'center'; ctx.fillText('SPACE pause   A/D (or arrows) speed   R restart   ESC back', W / 2, H - 20); ctx.textAlign = 'left';
+  }
   function lapDone(c) {
-    if (c.lap < 1) { c.lapStart = raceT; return; }
+    if (c.lap < 1) { c.lapStart = raceT; if (c.k === 0) rec = []; return; }
     const lt = raceT - c.lapStart; c.lapStart = raceT; c.lapTimes.push(lt);
     if (!c.bestLap || lt < c.bestLap) c.bestLap = lt;
-    if (c.k === 0) { tone(880, 0.12, 'triangle', 0.04); const key = trackI; if (!best[key] || lt < best[key]) { best[key] = lt; saveBest(); } }
+    if (c.k === 0) { tone(880, 0.12, 'triangle', 0.04); const key = trackI; if (!best[key] || lt < best[key]) { best[key] = lt; saveBest(); saveLapReplay(key, lt); } rec = []; }
     if (c.lap >= LAPS && !c.done) { c.done = true; c.doneT = raceT; c.place = ++finishedCount; if (c.k === 0) { tone(523, 0.15, 'triangle', 0.05); setTimeout(() => running && tone(784, 0.3, 'triangle', 0.05), 150); } }
   }
 
@@ -7952,6 +8016,7 @@ const NeonRacer = (() => {
     let gp = false; const pads = navigator.getGamepads ? navigator.getGamepads() : [];
     for (const g of pads) { if (!g) continue; if (g.buttons[0]?.pressed) gp = true; break; }
     const gpHit = gp && !gpWas; gpWas = gp;
+    if (screen === 'replay') { stepReplay(); return; }
     if (screen !== 'race') return;
     sparks.forEach(s => { s.x += s.vx; s.y += s.vy; s.t--; }); sparks = sparks.filter(s => s.t > 0);
     skids.forEach(s => s.t--); while (skids.length && skids[0].t <= 0) skids.shift();
@@ -7962,6 +8027,7 @@ const NeonRacer = (() => {
     }
     raceT++;
     cars.forEach(stepCar); bump();
+    if (phase === 'race' && !cars[0].done && raceT % 2 === 0 && rec.length < 2400) rec.push(cars.map(c => [Math.round(c.x * 10) / 10, Math.round(c.y * 10) / 10, Math.round(c.ang * 100) / 100]));
     if (phase === 'race' && cars[0].done) { endT++; if (endT > 120) phase = 'over'; }
     if (phase === 'race' && finishedCount === 4) phase = 'over';
     if (phase === 'over' && gpHit) { stop(); showMenu(); }
@@ -8036,7 +8102,7 @@ const NeonRacer = (() => {
 
   // ── Menus ──
   function btns() {
-    if (screen === 'track') return TRACKS.map((_, i) => ({ x: 40 + (i % 3) * 245, y: 98 + Math.floor(i / 3) * 100, w: 225, h: 92 }));
+    if (screen === 'track') return TRACKS.slice(0, 6).map((_, i) => ({ x: 40 + (i % 3) * 245, y: 98 + Math.floor(i / 3) * 100, w: 225, h: 92 }));
     return [];
   }
   function drawTrackMenu() {
@@ -8070,7 +8136,7 @@ const NeonRacer = (() => {
     const saved = cl; const c = buildTrack(pts); cl = saved; prevCache[key] = c.filter((_, i) => i % 6 === 0).map(p => [p.x, p.y]); return prevCache[key];
   }
 
-  function draw() { if (screen === 'race') drawRace(); else drawTrackMenu(); }
+  function draw() { if (screen === 'race') drawRace(); else if (screen === 'replay') drawReplay(); else drawTrackMenu(); }
   function loop(ts) {
     if (!running) return; animId = requestAnimationFrame(loop);
     acc += Math.min(0.05, (ts - lastTs) / 1000 || 0); lastTs = ts;
@@ -8082,6 +8148,7 @@ const NeonRacer = (() => {
     if (BLOCK.has(e.code)) e.preventDefault();
     const was = keys[e.code]; keys[e.code] = true; if (was) return;
     const c = e.code;
+    if (screen === 'replay') { replayKey(c); return; }
     if (c === 'Escape') { if (screen === 'race') { screen = 'track'; return; } stop(); showMenu(); return; }
     if (screen === 'track') {
       if (c === 'ArrowLeft' || c === 'KeyA') sel = (sel + 5) % 6; else if (c === 'ArrowRight' || c === 'KeyD') sel = (sel + 1) % 6;
@@ -8112,7 +8179,7 @@ const NeonRacer = (() => {
     screen = 'track'; sel = 0; frameN = 0; acc = 0; lastTs = performance.now(); gpWas = false; cars = []; cl = [];
     animId = requestAnimationFrame(loop);
   }
-  return { start, stop, tracks: TRACKS, build: buildTrack, items: makeItems, drawItems, N, HALF, _s: () => ({ cars, phase, cl, screen }) };
+  return { start, stop, playReplay, playCustom, tracks: TRACKS, build: buildTrack, items: makeItems, drawItems, N, HALF, _s: () => ({ cars, phase, cl, screen }) };
 })();
 
 </script>
@@ -8583,6 +8650,7 @@ const Online = (() => {
     if (gid === 'gravity') return (s.mode || 'versus').toUpperCase();
     if (gid === 'brawler') return s.mode === 'tourney' ? 'TOURNAMENT (3-8)' : '1v1 DUEL';
     if (gid === 'defense') return ['EASY', 'NORMAL', 'HARD'][s.diff == null ? 1 : s.diff] + ' · co-op';
+    if (gid === 'party') return ((s.list || []).length || 4) + ' mini-games';
     if (gid === 'snake') return ['SLOW', 'NORMAL', 'FAST'][(s.speed || 2) - 1] + ' · ' + (s.walls === 'wrap' ? 'wrap walls' : 'solid walls');
     return '';
   }
@@ -8643,7 +8711,7 @@ const Online = (() => {
     if (--listT < 0) { listT = 120; tx({ t: 'list', game: gameId }); }
   }
   function joinCode() { if (codeInput.length === 4) tx({ t: 'join', code: codeInput }); }
-  function defaultSettings(g) { return { tank: { size: 1, rounds: 5, map: 4 }, boost: { size: 1, goals: 5, mins: 2 }, racer: { track: 0, laps: 3 }, gravity: { mode: 'versus' }, snake: { speed: 2, walls: 'solid' }, defense: { diff: 1 }, brawler: { mode: 'duel' } }[g]; }
+  function defaultSettings(g) { return { tank: { size: 1, rounds: 5, map: 4 }, boost: { size: 1, goals: 5, mins: 2 }, racer: { track: 0, laps: 3 }, gravity: { mode: 'versus' }, snake: { speed: 2, walls: 'solid' }, defense: { diff: 1 }, brawler: { mode: 'duel' }, party: { list: ['react', 'mash', 'dodge', 'snake'] } }[g]; }
 
   const SETTINGS = {
     tank: [{ key: 'size', label: 'TEAM SIZE', opts: [[1, '1v1'], [2, '2v2'], [3, '3v3']] }, { key: 'rounds', label: 'FIRST TO', opts: [[3, '3 rounds'], [5, '5 rounds'], [7, '7 rounds']] }, { key: 'map', label: 'MAP', opts: [[4, 'Mixed'], [0, 'Random maze'], [1, 'Open arena'], [2, 'Crossroads'], [3, 'Fortress']] }],
@@ -8651,6 +8719,7 @@ const Online = (() => {
     racer: [{ key: 'track', label: 'TRACK', opts: [[0, 'Neon Oval'], [1, 'Twister'], [2, 'The Loop'], [3, 'Speedway'], [4, 'The Bean'], [5, 'Boomerang']] }, { key: 'laps', label: 'LAPS', opts: [[2, '2'], [3, '3'], [4, '4']] }],
     snake: [{ key: 'speed', label: 'SPEED', opts: [[1, 'Slow'], [2, 'Normal'], [3, 'Fast']] }, { key: 'walls', label: 'WALLS', opts: [['solid', 'Solid (deadly)'], ['wrap', 'Wrap around']] }],
     brawler: [{ key: 'mode', label: 'MODE', opts: [['duel', '1v1 Duel'], ['tourney', 'Tournament (3-8 players)']] }],
+    party: [],
     defense: [{ key: 'diff', label: 'DIFFICULTY', opts: [[0, 'Easy (30 lives)'], [1, 'Normal (20 lives)'], [2, 'Hard (12 lives)']] }],
     gravity: [{ key: 'mode', label: 'MODE', opts: [['versus', 'Versus'], ['race', 'Race'], ['coop', 'Co-op']] }],
   };
@@ -8712,7 +8781,17 @@ const Online = (() => {
       if (isHost()) button(557, y + 15, 201, 24, cur[1] + '  ▶', d.color, () => { const idx = s.opts.findIndex(o => o[0] === cur[0]); const ns = Object.assign({}, room.settings, { [s.key]: s.opts[(idx + 1) % s.opts.length][0] }); tx({ t: 'settings', settings: ns }); }, { size: 12 });
       else txt(cur[1], 557, y + 32, 14, '#ffffff');
     });
-    if (room.game === 'gravity') { wrapText(MODE_INFO[room.settings.mode], 30, 288, 740, 12, 'rgba(255,255,255,0.6)'); }
+    if (room.game === 'party') {
+      const L = OnlineGames.party.list, cur = room.settings.list || OnlineGames.party.defaults;
+      L.forEach(([id, lab, col], i) => {
+        const x = 553 + (i % 2) * 106, y = 104 + Math.floor(i / 2) * 36, k = cur.indexOf(id), tag = k >= 0 ? (k + 1) + '. ' + lab : lab;
+        if (isHost()) button(x, y, 100, 30, tag, k >= 0 ? col : '#667', () => { const nl = k >= 0 ? cur.filter(q => q !== id) : cur.concat(id); if (nl.length) tx({ t: 'settings', settings: Object.assign({}, room.settings, { list: nl }) }); }, { size: 11, fill: k >= 0 });
+        else { ctx.strokeStyle = k >= 0 ? col : 'rgba(255,255,255,0.15)'; ctx.lineWidth = 1.5; rr(x, y, 100, 30, 8); ctx.stroke(); txt(tag, x + 50, y + 19, 11, k >= 0 ? col : 'rgba(255,255,255,0.3)', 'center'); }
+      });
+      txt(cur.length + ' game' + (cur.length === 1 ? '' : 's') + ' in the playlist' + (isHost() ? ' (click to add / remove)' : ''), 657, 236, 10, 'rgba(255,255,255,0.55)', 'center'); txt('games are played in the order of the numbers', 657, 252, 9, 'rgba(255,255,255,0.35)', 'center');
+      wrapText('Party time! Everyone plays a playlist of quick mini-games and earns points: 1st place 5 points, 2nd 3, 3rd 2, everyone else 1. The most points at the end is the PARTY CHAMPION. Host: click the games on the right to choose the playlist.', 30, 288, 740, 12, 'rgba(255,255,255,0.6)');
+    }
+    else if (room.game === 'gravity') { wrapText(MODE_INFO[room.settings.mode], 30, 288, 740, 12, 'rgba(255,255,255,0.6)'); }
     else if (room.game === 'racer') wrapText('Drift with SPACE, nitro with SHIFT. Grab yellow BOOST pads, dodge purple OIL! First to finish wins!', 30, 288, 740, 12, 'rgba(255,255,255,0.6)');
     else if (room.game === 'brawler') wrapText(room.settings.mode === 'tourney' ? 'Knockout tournament for 3-8 players! Everyone fights one best-of-3 match at a time while the others watch. Win your matches to become the CHAMPION. Pick a fighter, then A/D move, W jump, F punch, G heavy, S block.' : 'Duel! Pick a fighter (BLAZE, TITAN, NINJA, MAGE), then best of 3 rounds. A/D move, W jump, F punch, G heavy, S block (guard breaks!).', 30, 288, 740, 12, 'rgba(255,255,255,0.6)');
     else if (room.game === 'defense') wrapText('Co-op! You all share one base, one pile of money and the same path. Click a tile to build, click a tower to upgrade or sell it. Anyone can start a wave (SPACE). Q/E switches tower. Beat 25 waves and the bosses together!', 30, 288, 740, 12, 'rgba(255,255,255,0.6)');
@@ -9464,7 +9543,7 @@ OnlineGames.racer = (() => {
       onState(d) { S.ph = d.ph; S.cd = d.cd; S.t = d.t; S.cars = d.C.map(a => ({ id: a[0], x: a[1], y: a[2], ang: a[3], lap: a[4], idx: a[5], done: !!a[6], doneT: a[7], place: a[8], nitro: a[9], on: !!a[10], fx: a[11], spd: a[12], slot: a[13], name: a[14], prog: a[15] })); },
       onEvent(e) { if (e.k === 'fin' && e.id === env.me) { tone(523, 0.15, 'triangle', 0.05); } },
       onPlayers(list) { if (host) { S.cars = S.cars.filter(c => list.some(p => p.id === c.id)); } },
-      isOver() { return S.ph === 'over'; }, draw, destroy() {},
+      isOver() { return S.ph === 'over'; }, result() { return order().map(c => c.id); }, draw, destroy() {},
     };
   }
   return { id: 'racer', title: 'NEON RACER', color: '#ff3d7f', teams: false, create };
@@ -9615,7 +9694,7 @@ OnlineGames.gravity = (() => {
       },
       onEvent(e) { if (e.k === 'die') { shake = 8; tone(160, 0.25, 'sawtooth', 0.04, 50); } },
       onPlayers(list) { if (host) { S.P = S.P.filter(p => list.some(q => q.id === p.id)); } },
-      isOver() { return S.ph === 'over'; }, draw, destroy() {},
+      isOver() { return S.ph === 'over'; }, result() { return S.P.slice().sort((a, b) => (a.id === S.win ? -1 : b.id === S.win ? 1 : b.deadAt - a.deadAt)).map(p => p.id); }, draw, destroy() {},
     };
   }
   return { id: 'gravity', title: 'GRAVITY CHANGER', color: '#b266ff', teams: false, create };
@@ -9636,7 +9715,7 @@ OnlineGames.snake = (() => {
     const interval = [0, 9, 7, 5][Math.max(1, Math.min(3, +env.settings.speed || 2))];
     const players = env.players.slice(), n = players.length, CM = OnlineUtil.cols(players);
     const S = { ph: 'countdown', cd: CD, win: -2, snakes: [], food: [] };
-    let inputs = {}, frame = 0, stepT = 0, overT = 0, lastDir = -1, fx = [];
+    let inputs = {}, frame = 0, stepT = 0, overT = 0, lastDir = -1, fx = [], dOrd = [];
     const starts = [[6, 5, 1], [33, 14, 3], [33, 5, 3], [6, 14, 1], [19, 3, 2], [20, 16, 0]];
 
     if (host) {
@@ -9672,7 +9751,7 @@ OnlineGames.snake = (() => {
       for (const s of alive) { if (s.nh < 0) continue; if (bodyCells.has(s.nh) || headCount.get(s.nh) > 1) kill.add(s.id); }
       for (const s of alive) {
         if (!kill.has(s.id)) continue;
-        s.alive = false; s.diedAt = S.tick || 0; env.emit({ k: 'die', id: s.id, x: s.body[0] % COLS, y: Math.floor(s.body[0] / COLS) });
+        s.alive = false; dOrd.push(s.id); s.diedAt = S.tick || 0; env.emit({ k: 'die', id: s.id, x: s.body[0] % COLS, y: Math.floor(s.body[0] / COLS) });
         s.body.slice(s.nh < 0 ? 0 : 1).forEach((c, k) => { if (k % 2 === 0 && S.food.length < 45 && !S.food.includes(c)) S.food.push(c); });
         s.body = [];
       }
@@ -9734,8 +9813,8 @@ OnlineGames.snake = (() => {
         else if (e.k === 'die') { tone(180, 0.3, 'sawtooth', 0.04, 50); fx.push({ x: e.x * C + C / 2, y: e.y * C + C / 2, t: 25 }); }
       },
       resync() {},
-      onPlayers(list) { if (host) for (const s of S.snakes) if (s.alive && !list.some(p => p.id === s.id)) { s.alive = false; s.body = []; } },
-      isOver() { return S.ph === 'over'; }, draw, destroy() {},
+      onPlayers(list) { if (host) for (const s of S.snakes) if (s.alive && !list.some(p => p.id === s.id)) { s.alive = false; dOrd.push(s.id); s.body = []; } },
+      isOver() { return S.ph === 'over'; }, result() { const w = S.win; return (w >= 0 ? [w] : []).concat(dOrd.slice().reverse().filter(id => id !== w)).concat(S.snakes.map(s => s.id).filter(id => id !== w && !dOrd.includes(id))); }, draw, destroy() {},
     };
   }
   return { id: 'snake', title: 'SNAKE BATTLE', color: '#78d94c', teams: false, create };
@@ -10043,6 +10122,457 @@ OnlineGames.brawler = (() => {
 
 </script>
   <script>
+// ===== party-online.js =====
+// Party Mode (online only): the host picks a playlist of mini-games, everybody plays them one after another,
+// and a running points table decides the party champion. Like every online game, the HOST's browser runs the
+// sim and the others get snapshots. Three mini-games live here (Reaction, Mash, Dodge); Snake, Gravity and Racer
+// are borrowed from their own online versions.
+const PartyMini = {};
+
+(() => {
+  const W = 800, H = 400;
+  const glow = (t, x, y, s, col, al, bl) => { ctx.textAlign = al || 'center'; ctx.font = `bold ${s}px monospace`; ctx.fillStyle = col; ctx.shadowColor = col; ctx.shadowBlur = bl || 0; ctx.fillText(t, x, y); ctx.shadowBlur = 0; };
+  const txt = (t, x, y, s, col, al) => { ctx.textAlign = al || 'left'; ctx.font = `${s}px monospace`; ctx.fillStyle = col; ctx.fillText(t, x, y); };
+  const nm = (p) => String(p.name || '?').slice(0, 10);
+
+  // ── 1. REACTION RUSH: 3 rounds, press SPACE when the screen turns green ──
+  PartyMini.react = {
+    id: 'react', title: 'REACTION RUSH', color: '#66ff99', blurb: 'Wait for GREEN, then press SPACE as fast as you can. Press too early and you get a big penalty. 3 rounds, fastest total wins.',
+    create(env) {
+      const host = env.host, keys = env.keys, players = env.players.slice(), CM = OnlineUtil.cols(players), tone = OnlineUtil.makeTone(), ROUNDS = 3;
+      const S = { ph: 'ready', t: 0, rd: 0, res: {}, tot: {} }; players.forEach(p => { S.tot[p.id] = 0; });
+      let goAt = 0, press = 0, wasDown = false; const lastP = {};
+      function nextRound() { S.rd++; S.ph = 'wait'; S.t = 0; S.res = {}; goAt = 90 + Math.floor(Math.random() * 190); }
+      function finishRound() { players.forEach(p => { const r = S.res[p.id]; S.tot[p.id] += (r === undefined || r < 0) ? 1500 : r; }); S.ph = 'show'; S.t = 0; }
+      function hostStep() {
+        S.t++;
+        if (S.ph === 'ready') { if (S.t > 150) nextRound(); }
+        else if (S.ph === 'wait') { if (S.t >= goAt) { S.ph = 'go'; S.t = 0; env.emit({ k: 'go' }); } }
+        else if (S.ph === 'go') { if (players.every(p => S.res[p.id] !== undefined) || S.t > 90) finishRound(); }
+        else if (S.ph === 'show') { if (S.t > 110) { if (S.rd >= ROUNDS) { S.ph = 'over'; S.t = 0; } else nextRound(); } }
+        else if (S.ph === 'over') S.t++;
+      }
+      function pressed(pid) {
+        if (S.ph === 'wait') { if (S.res[pid] === undefined) S.res[pid] = -1; }
+        else if (S.ph === 'go' && S.res[pid] === undefined) S.res[pid] = Math.max(60, Math.round(S.t * 16.7));
+      }
+      function draw() {
+        const go = S.ph === 'go', wait = S.ph === 'wait';
+        ctx.fillStyle = go ? '#0a5a2a' : wait ? '#3a0a14' : '#050218'; ctx.fillRect(0, 0, W, H);
+        if (go) { ctx.fillStyle = 'rgba(102,255,153,0.25)'; ctx.fillRect(0, 0, W, H); }
+        txt('REACTION RUSH   round ' + Math.max(1, S.rd) + '/' + ROUNDS, 14, 22, 12, 'rgba(255,255,255,0.7)');
+        if (S.ph === 'ready') { glow('GET READY', W / 2, 150, 44, '#fff', 'center', 16); txt('When the screen turns GREEN, press SPACE!', W / 2, 190, 14, 'rgba(255,255,255,0.8)', 'center'); txt('Too early = 1.5 second penalty', W / 2, 212, 12, 'rgba(255,255,255,0.55)', 'center'); }
+        else if (wait) { glow('WAIT...', W / 2, 150, 60, '#ff5566', 'center', 20); txt('don’t press yet!', W / 2, 188, 14, 'rgba(255,255,255,0.6)', 'center'); }
+        else if (go) glow('NOW!!!', W / 2, 150, 90, '#ffffff', 'center', 30);
+        if (S.ph === 'show' || go || wait || S.ph === 'over') {
+          const rows = players.slice().sort((a, b) => (S.ph === 'over' ? S.tot[a.id] - S.tot[b.id] : ((S.res[a.id] > 0 ? S.res[a.id] : 99999) - (S.res[b.id] > 0 ? S.res[b.id] : 99999))));
+          if (S.ph === 'over') glow('TOTAL TIME', W / 2, 70, 26, '#66ff99', 'center', 10);
+          rows.forEach((p, i) => {
+            const y = 215 + i * 20 - (S.ph === 'over' ? 105 : 0), col = CM[p.id], r = S.res[p.id];
+            txt(nm(p) + (p.id === env.me ? ' (you)' : ''), 250, y, 14, col, 'left');
+            const label = S.ph === 'over' ? S.tot[p.id] + ' ms' : r === undefined ? (go ? '' : wait ? '' : 'too slow') : r < 0 ? 'TOO EARLY!' : r + ' ms';
+            txt(label, 560, y, 14, r < 0 ? '#ff5566' : '#fff', 'right');
+          });
+        }
+      }
+      return {
+        localInput() { const down = !!(keys.Space || keys.Enter || keys.KeyF); if (down && !wasDown) press++; wasDown = down; return { p: press }; },
+        onInput(pid, d) { const n = d && d.p | 0; if (n > (lastP[pid] || 0)) { lastP[pid] = n; pressed(pid); } },
+        update() { if (host) hostStep(); },
+        snapshot() { return { ph: S.ph, t: S.t, rd: S.rd, res: S.res, tot: S.tot }; },
+        onState(d) { S.ph = d.ph; S.t = d.t; S.rd = d.rd; S.res = d.res; S.tot = d.tot; },
+        onEvent(e) { if (e.k === 'go') tone(880, 0.2, 'square', 0.04, 1200); },
+        onPlayers() {}, resync() {},
+        isOver() { return S.ph === 'over' && S.t > 150; },
+        result() { return players.slice().sort((a, b) => S.tot[a.id] - S.tot[b.id]).map(p => p.id); },
+        draw, destroy() {},
+      };
+    },
+  };
+
+  // ── 2. BUTTON MASH: 8 seconds, press SPACE as many times as you can ──
+  PartyMini.mash = {
+    id: 'mash', title: 'BUTTON MASH', color: '#ffd24a', blurb: 'Hit SPACE as fast as you can for 8 seconds. Most presses wins!',
+    create(env) {
+      const host = env.host, keys = env.keys, players = env.players.slice(), CM = OnlineUtil.cols(players), tone = OnlineUtil.makeTone();
+      const S = { ph: 'ready', t: 0, cnt: {} }; players.forEach(p => { S.cnt[p.id] = 0; });
+      let press = 0, wasDown = false, lastTone = 0; const PLAY = 480;
+      function hostStep() {
+        S.t++;
+        if (S.ph === 'ready' && S.t > 150) { S.ph = 'play'; S.t = 0; env.emit({ k: 'go' }); }
+        else if (S.ph === 'play' && S.t >= PLAY) { S.ph = 'over'; S.t = 0; }
+        else if (S.ph === 'over') { /* t counts up */ }
+      }
+      function draw() {
+        ctx.fillStyle = '#050218'; ctx.fillRect(0, 0, W, H);
+        glow('BUTTON MASH', W / 2, 44, 26, '#ffd24a', 'center', 12);
+        if (S.ph === 'ready') { const n = Math.ceil((150 - S.t) / 50); glow(String(n), W / 2, 200, 90, '#fff', 'center', 24); txt('Press SPACE as fast as you can!', W / 2, 250, 14, 'rgba(255,255,255,0.75)', 'center'); }
+        else glow(S.ph === 'play' ? (Math.max(0, (PLAY - S.t) / 60)).toFixed(1) + 's' : 'TIME!', W / 2, 82, 24, S.ph === 'play' ? '#fff' : '#ff5566', 'center', 10);
+        const me = S.ph !== 'ready' ? Math.max(1, ...players.map(p => S.cnt[p.id] || 0), 30) : 30;
+        players.forEach((p, i) => {
+          const y = 110 + i * 34, col = CM[p.id], v = p.id === env.me && !env.spectator ? Math.max(S.cnt[p.id] || 0, S.ph === 'play' ? Math.min(press, 400) : 0) : (S.cnt[p.id] || 0);
+          txt(nm(p), 40, y + 16, 13, col, 'left'); ctx.fillStyle = 'rgba(255,255,255,0.1)'; ctx.fillRect(160, y + 3, 520, 18); ctx.fillStyle = col; ctx.shadowColor = col; ctx.shadowBlur = 8; ctx.fillRect(160, y + 3, Math.min(520, 520 * v / me), 18); ctx.shadowBlur = 0;
+          txt(String(v), 700, y + 17, 15, '#fff', 'left');
+        });
+      }
+      return {
+        localInput() { const down = !!(keys.Space || keys.Enter || keys.KeyF); if (down && !wasDown) { press++; if (S.ph === 'play' && press - lastTone >= 1) { lastTone = press; tone(300 + (press % 8) * 40, 0.03, 'square', 0.01); } } wasDown = down; return { p: press }; },
+        onInput(pid, d) { if (S.ph !== 'play') return; const n = Math.min(d && d.p | 0, Math.floor(S.t / 2.5) + 4); if (n > (S.cnt[pid] || 0)) S.cnt[pid] = n; },
+        update() { if (host) hostStep(); },
+        snapshot() { return { ph: S.ph, t: S.t, cnt: S.cnt }; },
+        onState(d) { S.ph = d.ph; S.t = d.t; S.cnt = d.cnt; },
+        onEvent(e) { if (e.k === 'go') tone(880, 0.25, 'square', 0.04, 1200); },
+        onPlayers() {}, resync() {},
+        isOver() { return S.ph === 'over' && S.t > 120; },
+        result() { return players.slice().sort((a, b) => (S.cnt[b.id] || 0) - (S.cnt[a.id] || 0)).map(p => p.id); },
+        draw, destroy() {},
+      };
+    },
+  };
+
+  // ── 3. DODGE: slide left and right, last one standing wins ──
+  PartyMini.dodge = {
+    id: 'dodge', title: 'DODGE RAIN', color: '#ff66cc', blurb: 'Blocks fall from the sky! Move with A/D or the arrow keys. Last one alive wins.',
+    create(env) {
+      const host = env.host, keys = env.keys, players = env.players.slice(), CM = OnlineUtil.cols(players), tone = OnlineUtil.makeTone();
+      const S = { ph: 'ready', t: 0, P: [], B: [], win: -1 }, Y = 358; let inputs = {}, spawnT = 0, endT = 0, fx = [];
+      if (host) S.P = players.map((p, i) => ({ id: p.id, x: 120 + (560 * (i + 0.5)) / players.length, alive: true, dt: 0 }));
+      function hostStep() {
+        S.t++;
+        if (S.ph === 'ready') { if (S.t > 150) { S.ph = 'play'; S.t = 0; } return; }
+        if (S.ph === 'over') return;
+        S.P.forEach(p => { if (!p.alive) return; const d = (inputs[p.id] || {}).d | 0; p.x = Math.max(14, Math.min(W - 14, p.x + Math.max(-1, Math.min(1, d)) * 5.4)); });
+        if (!endT && --spawnT <= 0) {
+          spawnT = Math.max(7, 26 - Math.floor(S.t / 120)); const w = 28 + Math.floor(Math.random() * 62), vy = 3 + Math.min(4.5, S.t / 700) + Math.random() * 1.5;
+          S.B.push([Math.floor(Math.random() * (W - w)), -24, w, 22, vy]);
+          if (S.t > 900 && Math.random() < 0.4) S.B.push([Math.floor(Math.random() * (W - 40)), -60, 40, 22, vy + 1]);
+        }
+        S.B.forEach(b => { b[1] += b[4]; }); S.B = S.B.filter(b => b[1] < H + 30);
+        S.P.forEach(p => {
+          if (!p.alive) return;
+          for (const b of S.B) { if (p.x + 9 > b[0] && p.x - 9 < b[0] + b[2] && Y + 14 > b[1] && Y - 10 < b[1] + b[3]) { p.alive = false; p.dt = S.t; env.emit({ k: 'die', x: p.x }); break; } }
+        });
+        const alive = S.P.filter(p => p.alive);
+        if (!endT && ((S.P.length > 1 ? alive.length <= 1 : alive.length === 0) || S.t > 3600)) endT = 1;
+        if (endT && ++endT > 70) { S.ph = 'over'; S.t = 0; S.win = alive.length === 1 && S.P.length > 1 ? alive[0].id : -1; }
+      }
+      function draw() {
+        ctx.fillStyle = '#050218'; ctx.fillRect(0, 0, W, H);
+        ctx.strokeStyle = 'rgba(255,102,204,0.08)'; ctx.lineWidth = 1; for (let x = 0; x < W; x += 40) { ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, H); ctx.stroke(); }
+        ctx.fillStyle = '#ff66cc'; ctx.shadowColor = '#ff66cc'; ctx.shadowBlur = 10; S.B.forEach(b => ctx.fillRect(b[0], b[1], b[2], b[3])); ctx.shadowBlur = 0;
+        S.P.forEach(p => {
+          const col = CM[p.id] || '#fff'; if (!p.alive) return;
+          ctx.fillStyle = col; ctx.shadowColor = col; ctx.shadowBlur = 14; ctx.beginPath(); ctx.moveTo(p.x, Y - 12); ctx.lineTo(p.x + 11, Y + 12); ctx.lineTo(p.x - 11, Y + 12); ctx.closePath(); ctx.fill(); ctx.shadowBlur = 0;
+          txt(nm(players.find(q => q.id === p.id) || { name: '?' }), p.x, Y + 26, 9, p.id === env.me ? '#fff' : 'rgba(255,255,255,0.7)', 'center');
+        });
+        fx.forEach(f => { f.t--; ctx.globalAlpha = Math.max(0, f.t / 25); ctx.strokeStyle = '#fff'; ctx.lineWidth = 2; ctx.beginPath(); ctx.arc(f.x, Y, 30 - f.t, 0, 6.28); ctx.stroke(); }); ctx.globalAlpha = 1; fx = fx.filter(f => f.t > 0);
+        const left = S.P.filter(p => p.alive).length; txt('alive: ' + left, W - 12, 20, 12, 'rgba(255,255,255,0.7)', 'right'); txt('DODGE RAIN', 12, 20, 12, '#ff66cc');
+        if (S.ph === 'ready') { const n = Math.ceil((150 - S.t) / 50); glow(String(n), W / 2, 190, 90, '#fff', 'center', 24); txt('A / D or arrow keys to move', W / 2, 235, 14, 'rgba(255,255,255,0.75)', 'center'); const me = S.P.find(p => p.id === env.me); if (me) glow('You are ' + (OnlineUtil.colName(CM[me.id]) || ''), W / 2, 262, 14, CM[me.id], 'center', 8); }
+        if (S.ph === 'over') { ctx.fillStyle = 'rgba(3,0,16,0.75)'; ctx.fillRect(0, 0, W, H); const w = S.P.find(p => p.id === S.win); glow(w ? (w.id === env.me ? 'YOU WIN!' : (players.find(q => q.id === w.id) || { name: '?' }).name + ' WINS!') : 'DRAW!', W / 2, 190, 46, w ? CM[w.id] : '#fff', 'center', 20); }
+      }
+      return {
+        localInput() { let d = 0; if (keys.ArrowLeft || keys.KeyA) d -= 1; if (keys.ArrowRight || keys.KeyD) d += 1; return { d }; },
+        onInput(pid, d) { inputs[pid] = d; },
+        update() { if (host) hostStep(); },
+        snapshot() { return { ph: S.ph, t: S.t, win: S.win, P: S.P.map(p => [p.id, Math.round(p.x), p.alive ? 1 : 0, p.dt]), B: S.B.map(b => [Math.round(b[0]), Math.round(b[1]), b[2], b[3]]) }; },
+        onState(d) { S.ph = d.ph; S.t = d.t; S.win = d.win; S.P = d.P.map(a => ({ id: a[0], x: a[1], alive: !!a[2], dt: a[3] })); S.B = d.B.map(a => [a[0], a[1], a[2], a[3], 0]); },
+        onEvent(e) { if (e.k === 'die') { tone(170, 0.3, 'sawtooth', 0.04, 50); fx.push({ x: e.x, t: 25 }); } },
+        onPlayers(list) { if (host) S.P.forEach(p => { if (p.alive && !list.some(q => q.id === p.id)) { p.alive = false; p.dt = S.t; } }); }, resync() {},
+        isOver() { return S.ph === 'over'; },
+        result() { return S.P.slice().sort((a, b) => (a.alive !== b.alive ? (a.alive ? -1 : 1) : b.dt - a.dt)).map(p => p.id); },
+        draw, destroy() {},
+      };
+    },
+  };
+})();
+
+// ── The party itself ──
+OnlineGames.party = (() => {
+  const W = 800, H = 400, PTS = [5, 3, 2, 1, 1, 1, 1, 1];
+  const glow = (t, x, y, s, col, al, bl) => { ctx.textAlign = al || 'center'; ctx.font = `bold ${s}px monospace`; ctx.fillStyle = col; ctx.shadowColor = col; ctx.shadowBlur = bl || 0; ctx.fillText(t, x, y); ctx.shadowBlur = 0; };
+  const txt = (t, x, y, s, col, al) => { ctx.textAlign = al || 'left'; ctx.font = `${s}px monospace`; ctx.fillStyle = col; ctx.fillText(t, x, y); };
+  const LIB = {
+    react: PartyMini.react, mash: PartyMini.mash, dodge: PartyMini.dodge,
+    snake: { id: 'snake', title: 'SNAKE BATTLE', color: '#78d94c', blurb: 'Arrow keys or WASD to turn. Crash and you are out. Last snake alive wins!', make: (env) => OnlineGames.snake.create(env), settings: () => ({ speed: 3, walls: 'solid' }) },
+    gravity: { id: 'gravity', title: 'GRAVITY RUN', color: '#b266ff', blurb: 'Press SPACE to flip gravity and dodge the obstacles. Last runner alive wins!', make: (env) => OnlineGames.gravity.create(env), settings: () => ({ mode: 'versus' }) },
+    racer: { id: 'racer', title: 'NEON RACER', color: '#00eaff', blurb: 'Two laps! W/S drive, A/D steer, SPACE drift, SHIFT nitro. First across the line wins.', make: (env) => OnlineGames.racer.create(env), settings: (env, gi) => ({ track: ((env.seed || 0) + gi) % 6, laps: 2 }) },
+  };
+  const LIST = [['react', 'REACTION', '#66ff99'], ['mash', 'MASH', '#ffd24a'], ['dodge', 'DODGE', '#ff66cc'], ['snake', 'SNAKE', '#78d94c'], ['gravity', 'GRAVITY', '#b266ff'], ['racer', 'RACER', '#00eaff']];
+  const DEFAULT = ['react', 'mash', 'dodge', 'snake'];
+
+  function create(env) {
+    const host = env.host, players = env.players.slice(), CM = OnlineUtil.cols(players), tone = OnlineUtil.makeTone();
+    let list = (env.settings.list || DEFAULT).filter(id => LIB[id]); if (!list.length) list = DEFAULT.slice();
+    const S = { ph: 'intro', gi: 0, t: 0, pts: {}, dl: {}, names: {}, ord: [] };
+    players.forEach(p => { S.pts[p.id] = 0; S.names[p.id] = p.name; });
+    let sub = null, subGi = -1, overWait = 0, present = new Set(players.map(p => p.id)), conf = [];
+    function killSub() { if (sub && sub.destroy) { try { sub.destroy(); } catch (e) {} } sub = null; subGi = -1; }
+    function mkSub() {
+      killSub(); const g = LIB[list[S.gi]], gi = S.gi;
+      const sEnv = Object.assign({}, env, { players: players.filter(p => present.has(p.id)), settings: g.settings ? g.settings(env, gi) : {}, emit: host ? (ev) => { env.emit({ p: 1, e: ev }); try { if (sub && sub.onEvent) sub.onEvent(ev); } catch (e) {} } : () => {} });
+      sub = g.make ? g.make(sEnv) : g.create(sEnv); subGi = gi;
+    }
+    function award() {
+      const res = sub && sub.result ? sub.result() : [], ids = Object.keys(S.pts).map(Number), order = res.filter(id => ids.includes(id));
+      ids.forEach(id => { if (!order.includes(id)) order.push(id); });
+      S.dl = {}; order.forEach((id, i) => { S.dl[id] = PTS[Math.min(i, PTS.length - 1)]; S.pts[id] += S.dl[id]; }); S.ord = order;
+    }
+    function hostStep() {
+      S.t++;
+      if (S.ph === 'intro') { if (S.t > 240) { S.ph = 'play'; S.t = 0; overWait = 0; mkSub(); } }
+      else if (S.ph === 'play') { const late = S.t > (list[S.gi] === 'racer' ? 5400 : 7500); if (sub && (sub.isOver() || late)) { if (late || ++overWait > 150) { award(); killSub(); S.ph = 'scores'; S.t = 0; } } }
+      else if (S.ph === 'scores') { if (S.t > 330) { if (S.gi + 1 >= list.length) { S.ph = 'final'; S.t = 0; env.emit({ k: 'fin' }); } else { S.gi++; S.ph = 'intro'; S.t = 0; } } }
+      else if (S.ph === 'final') { if (S.t > 300) S.ph = 'end'; }
+    }
+    function table(x, y, w, delta) {
+      const ids = Object.keys(S.pts).map(Number).sort((a, b) => S.pts[b] - S.pts[a]), top = S.pts[ids[0]] || 1;
+      ids.forEach((id, i) => {
+        const yy = y + i * 29, col = CM[id] || '#fff', gone = !present.has(id);
+        ctx.fillStyle = 'rgba(255,255,255,0.05)'; ctx.fillRect(x, yy, w, 25);
+        txt((i + 1) + '.', x + 8, yy + 18, 13, i === 0 ? '#ffd24a' : 'rgba(255,255,255,0.6)'); txt((S.names[id] || '?').slice(0, 10) + (id === env.me ? ' (you)' : '') + (gone ? ' (left)' : ''), x + 34, yy + 18, 13, gone ? 'rgba(255,255,255,0.35)' : col);
+        ctx.fillStyle = col; ctx.globalAlpha = 0.55; ctx.fillRect(x + 200, yy + 7, Math.max(2, (w - 300) * S.pts[id] / Math.max(1, top)), 11); ctx.globalAlpha = 1;
+        txt(String(S.pts[id]), x + w - 40, yy + 18, 15, '#fff', 'right'); if (delta && S.dl[id]) txt('+' + S.dl[id], x + w - 8, yy + 18, 13, '#66ff99', 'right');
+      });
+    }
+    function bg() { const g = ctx.createLinearGradient(0, 0, 0, H); g.addColorStop(0, '#050218'); g.addColorStop(1, '#14043a'); ctx.fillStyle = g; ctx.fillRect(0, 0, W, H); }
+    function draw() {
+      const g = LIB[list[Math.min(S.gi, list.length - 1)]];
+      if (S.ph === 'play') {
+        if (sub) sub.draw(); else { ctx.fillStyle = '#050218'; ctx.fillRect(0, 0, W, H); }
+        txt('PARTY  ' + (S.gi + 1) + '/' + list.length + '  ' + g.title, W / 2, H - 5, 9, 'rgba(255,255,255,0.4)', 'center'); return;
+      }
+      bg();
+      if (S.ph === 'intro') {
+        txt('PARTY MODE', W / 2, 46, 14, 'rgba(255,255,255,0.55)', 'center'); glow('GAME ' + (S.gi + 1) + ' OF ' + list.length, W / 2, 84, 20, '#fff', 'center', 8); glow(g.title, W / 2, 148, 46, g.color, 'center', 20);
+        const words = g.blurb.split(' '); let line = '', y = 188; words.forEach(w => { if ((line + w).length > 58) { txt(line, W / 2, y, 14, 'rgba(255,255,255,0.85)', 'center'); y += 20; line = ''; } line += w + ' '; }); txt(line, W / 2, y, 14, 'rgba(255,255,255,0.85)', 'center');
+        ctx.fillStyle = 'rgba(255,255,255,0.12)'; ctx.fillRect(250, 300, 300, 8); ctx.fillStyle = g.color; ctx.fillRect(250, 300, 300 * Math.min(1, S.t / 240), 8);
+        txt('1st = 5 pts   2nd = 3   3rd = 2   others = 1', W / 2, 340, 12, 'rgba(255,255,255,0.5)', 'center');
+      } else if (S.ph === 'scores') {
+        glow('RESULTS: ' + g.title, W / 2, 46, 22, g.color, 'center', 10); table(100, 72, 600, S.t > 50);
+        txt(S.gi + 1 < list.length ? 'Next up: ' + LIB[list[S.gi + 1]].title : 'That was the last game!', W / 2, 388, 12, 'rgba(255,255,255,0.55)', 'center');
+      } else {
+        const ids = Object.keys(S.pts).map(Number).sort((a, b) => S.pts[b] - S.pts[a]), w = ids[0], tie = ids.length > 1 && S.pts[ids[1]] === S.pts[w];
+        if (conf.length < 90 && frameC++ % 2 === 0) conf.push({ x: Math.random() * W, y: -10, v: 1.5 + Math.random() * 2, c: ['#ffd24a', '#ff4488', '#33aaff', '#78d94c', '#b266ff'][conf.length % 5] });
+        conf.forEach(c => { c.y += c.v; if (c.y > H) c.y = -10; ctx.fillStyle = c.c; ctx.fillRect(c.x, c.y, 5, 8); });
+        glow(tie ? 'IT’S A TIE!' : (w === env.me ? 'YOU ARE THE CHAMPION!' : (S.names[w] || '?') + ' IS THE CHAMPION!'), W / 2, 50, 28, tie ? '#fff' : CM[w] || '#ffd24a', 'center', 16); txt('FINAL SCORES', W / 2, 72, 12, 'rgba(255,255,255,0.55)', 'center'); table(100, 84, 600, false);
+      }
+    }
+    let frameC = 0;
+    return {
+      localInput() { return { s: sub && S.ph === 'play' && sub.localInput ? sub.localInput() : null }; },
+      onInput(pid, d) { if (sub && S.ph === 'play' && sub.onInput && d) sub.onInput(pid, d.s); },
+      update() { if (host) hostStep(); if (sub && S.ph === 'play') sub.update(); },
+      snapshot() { return { ph: S.ph, gi: S.gi, t: S.t, pts: S.pts, dl: S.dl, ord: S.ord, sub: S.ph === 'play' && sub ? sub.snapshot() : null }; },
+      onState(d) {
+        S.ph = d.ph; S.t = d.t; S.pts = d.pts; S.dl = d.dl; S.ord = d.ord; S.gi = d.gi;
+        if (d.ph === 'play') { if (!sub || subGi !== d.gi) mkSub(); if (d.sub && sub) sub.onState(d.sub); } else if (sub) killSub();
+      },
+      onEvent(d) { if (d.p === 1 && sub && sub.onEvent) sub.onEvent(d.e); else if (d.k === 'fin') { tone(523, 0.15, 'triangle', 0.05); setTimeout(() => tone(784, 0.3, 'triangle', 0.05), 160); } },
+      onPlayers(l) { present = new Set(l.map(p => p.id)); if (sub && sub.onPlayers) sub.onPlayers(l); },
+      resync() { if (sub && sub.resync) sub.resync(); },
+      isOver() { return S.ph === 'end'; }, draw, destroy() { killSub(); },
+    };
+  }
+  return { id: 'party', title: 'PARTY MODE', color: '#ff9f43', teams: false, create, list: LIST, lib: LIB, defaults: DEFAULT };
+})();
+
+// The main-menu card starts the online lobby for Party Mode directly (it is an online-only game)
+const PartyEntry = { start() { Online.start('party', () => showMenu()); }, stop() { Online.stop(); } };
+
+</script>
+  <script>
+// ===== maker.js =====
+// Level Maker: draw your own Tank Battle map or Neon Racer track, play it, and share it with a code.
+const Maker = (() => {
+  const W = 800, H = 400, TAU = Math.PI * 2;
+  const COLS = 16, ROWS = 7, CELL = 50, X0 = 0, Y0 = 36 + Math.floor((H - 36 - ROWS * CELL) / 2);
+  const ALPHA = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_';
+  let running = false, animId = null, screen = 'home', frame = 0, btns = [], hov = null, msg = '', msgT = 0, msgOk = true, mouse = { x: 0, y: 0, down: false };
+  const STARS = Array.from({ length: 60 }, () => ({ x: Math.random() * W, y: Math.random() * H, r: Math.random() * 1.2 + 0.3, t: Math.random() * TAU }));
+  const say = (s, ok) => { msg = s; msgOk = ok !== false; msgT = 240; };
+  const lsGet = (k, d) => { try { const v = localStorage.getItem(k); return v === null ? d : JSON.parse(v); } catch (e) { return d; } };
+  const lsSet = (k, v) => { try { localStorage.setItem(k, JSON.stringify(v)); } catch (e) {} };
+
+  // ── tiny drawing helpers ──
+  function rr(x, y, w, h, r) { ctx.beginPath(); ctx.moveTo(x + r, y); ctx.lineTo(x + w - r, y); ctx.quadraticCurveTo(x + w, y, x + w, y + r); ctx.lineTo(x + w, y + h - r); ctx.quadraticCurveTo(x + w, y + h, x + w - r, y + h); ctx.lineTo(x + r, y + h); ctx.quadraticCurveTo(x, y + h, x, y + h - r); ctx.lineTo(x, y + r); ctx.quadraticCurveTo(x, y, x + r, y); ctx.closePath(); }
+  function txt(t, x, y, s, col, al, bold) { ctx.textAlign = al || 'left'; ctx.font = (bold ? 'bold ' : '') + s + 'px monospace'; ctx.fillStyle = col; ctx.fillText(t, x, y); }
+  function glow(t, x, y, s, col, al, bl) { ctx.shadowColor = col; ctx.shadowBlur = bl || 0; txt(t, x, y, s, col, al, true); ctx.shadowBlur = 0; }
+  function button(x, y, w, h, label, col, fn, o) {
+    o = o || {}; const on = hov && hov.x === x && hov.y === y && !o.off; btns.push({ x, y, w, h, fn, off: o.off });
+    ctx.globalAlpha = o.off ? 0.35 : 1; ctx.strokeStyle = col; ctx.shadowColor = col; ctx.shadowBlur = on ? 14 : 4; ctx.lineWidth = on ? 2.5 : 1.5; ctx.fillStyle = on || o.fill ? 'rgba(255,255,255,0.14)' : 'rgba(255,255,255,0.04)'; rr(x, y, w, h, 7); ctx.fill(); ctx.stroke(); ctx.shadowBlur = 0;
+    txt(label, x + w / 2, y + h / 2 + (o.size || 11) / 3, o.size || 11, col, 'center', true); if (o.sub) txt(o.sub, x + w / 2, y + h - 10, 10, 'rgba(255,255,255,0.55)', 'center'); ctx.globalAlpha = 1;
+  }
+  function bgFill() {
+    const g = ctx.createLinearGradient(0, 0, 0, H); g.addColorStop(0, '#030010'); g.addColorStop(1, '#0f0036'); ctx.fillStyle = g; ctx.fillRect(0, 0, W, H);
+    STARS.forEach(s => { ctx.fillStyle = `rgba(255,255,255,${0.12 + 0.12 * Math.sin(frame * 0.04 + s.t)})`; ctx.beginPath(); ctx.arc(s.x, s.y, s.r, 0, TAU); ctx.fill(); });
+  }
+  const pos = (e) => { const r = canvas.getBoundingClientRect(); return { x: (e.clientX - r.left) * (W / r.width), y: (e.clientY - r.top) * (H / r.height) }; };
+
+  // ── share codes (base64-ish, 6 bits per character) ──
+  function packBits(bits) { let s = ''; for (let i = 0; i < bits.length; i += 6) { let v = 0; for (let k = 0; k < 6; k++) v = v * 2 + (bits[i + k] ? 1 : 0); s += ALPHA[v]; } return s; }
+  function unpackBits(s) { const out = []; for (const ch of s) { const v = ALPHA.indexOf(ch); if (v < 0) return null; for (let k = 5; k >= 0; k--) out.push((v >> k) & 1); } return out; }
+  function tankEncode(m) { const bits = []; for (let r = 0; r < ROWS; r++) for (let c = 1; c < COLS; c++) bits.push(m.v[r][c]); for (let r = 1; r < ROWS; r++) for (let c = 0; c < COLS; c++) bits.push(m.h[r][c]); while (bits.length % 6) bits.push(0); return 'T' + packBits(bits); }
+  function tankDecode(code) {
+    const need = ROWS * (COLS - 1) + (ROWS - 1) * COLS; if (code[0] !== 'T' || code.length !== 1 + Math.ceil(need / 6)) return null;
+    const bits = unpackBits(code.slice(1)); if (!bits) return null; const m = blankTank(); let k = 0;
+    for (let r = 0; r < ROWS; r++) for (let c = 1; c < COLS; c++) m.v[r][c] = !!bits[k++]; for (let r = 1; r < ROWS; r++) for (let c = 0; c < COLS; c++) m.h[r][c] = !!bits[k++]; return m;
+  }
+  function racerEncode(pts) { let s = 'R' + ALPHA[pts.length]; pts.forEach(p => { [p[0], p[1]].forEach(v => { v = Math.max(0, Math.min(4095, Math.round(v))); s += ALPHA[v >> 6] + ALPHA[v & 63]; }); }); return s; }
+  function racerDecode(code) {
+    if (code[0] !== 'R') return null; const n = ALPHA.indexOf(code[1]); if (n < 5 || n > 16 || code.length !== 2 + n * 4) return null; const pts = [];
+    for (let i = 0; i < n; i++) { const a = [0, 1].map(k => { const hi = ALPHA.indexOf(code[2 + i * 4 + k * 2]), lo = ALPHA.indexOf(code[3 + i * 4 + k * 2]); return hi < 0 || lo < 0 ? NaN : hi * 64 + lo; }); if (a.some(isNaN) || a[0] < 20 || a[0] > 780 || a[1] < 45 || a[1] > 380) return null; pts.push(a); }
+    return pts;
+  }
+
+  // ═══ TANK MAP EDITOR ═══
+  let tank = null, mirror = true, paint = null, edge = null;
+  tank = tankPresetInit();
+  function tankPresetInit() { return tankPreset(); }
+  function blankTank() {
+    const v = Array.from({ length: ROWS }, () => Array(COLS + 1).fill(false)), h = Array.from({ length: ROWS + 1 }, () => Array(COLS).fill(false));
+    for (let r = 0; r < ROWS; r++) { v[r][0] = true; v[r][COLS] = true; } for (let c = 0; c < COLS; c++) { h[0][c] = true; h[ROWS][c] = true; } return { v, h };
+  }
+  function tankPreset() { const m = blankTank(); for (let c = 3; c <= 12; c++) if (c !== 7 && c !== 8) m.h[3][c] = true; [[2, 3], [4, 3], [1, 5], [5, 5]].forEach(([r, c]) => { m.v[r][c] = true; m.v[r][COLS - c] = true; }); return m; }
+  function tankConnected(m) {
+    const seen = Array.from({ length: ROWS }, () => Array(COLS).fill(false)), st = [[0, 0]]; seen[0][0] = true; let n = 1;
+    while (st.length) { const [c, r] = st.pop(), nb = []; if (!m.v[r][c]) nb.push([c - 1, r]); if (!m.v[r][c + 1]) nb.push([c + 1, r]); if (!m.h[r][c]) nb.push([c, r - 1]); if (!m.h[r + 1][c]) nb.push([c, r + 1]); nb.forEach(([a, b]) => { if (a >= 0 && b >= 0 && a < COLS && b < ROWS && !seen[b][a]) { seen[b][a] = true; n++; st.push([a, b]); } }); }
+    return n === COLS * ROWS;
+  }
+  function edgeAt(p) {
+    if (p.y < Y0 || p.y >= Y0 + ROWS * CELL || p.x < 0 || p.x >= COLS * CELL) return null;
+    const c = Math.floor(p.x / CELL), r = Math.floor((p.y - Y0) / CELL), dx = p.x - c * CELL, dy = p.y - Y0 - r * CELL, d = [dx, CELL - dx, dy, CELL - dy], k = d.indexOf(Math.min(...d));
+    if (k === 0) return c === 0 ? null : { t: 'v', r, c }; if (k === 1) return c + 1 === COLS ? null : { t: 'v', r, c: c + 1 };
+    if (k === 2) return r === 0 ? null : { t: 'h', r, c }; return r + 1 === ROWS ? null : { t: 'h', r: r + 1, c };
+  }
+  const edgeGet = (e) => e.t === 'v' ? tank.v[e.r][e.c] : tank.h[e.r][e.c];
+  function edgeSet(e, val) {
+    if (e.t === 'v') { tank.v[e.r][e.c] = val; if (mirror) tank.v[e.r][COLS - e.c] = val; } else { tank.h[e.r][e.c] = val; if (mirror) tank.h[e.r][COLS - 1 - e.c] = val; }
+  }
+  function drawTank() {
+    bgFill();
+    ctx.fillStyle = 'rgba(51,170,255,0.07)'; ctx.fillRect(0, Y0, CELL * 2, ROWS * CELL); ctx.fillStyle = 'rgba(255,68,136,0.07)'; ctx.fillRect((COLS - 2) * CELL, Y0, CELL * 2, ROWS * CELL);
+    ctx.strokeStyle = 'rgba(255,255,255,0.08)'; ctx.lineWidth = 1; ctx.beginPath(); for (let c = 0; c <= COLS; c++) { ctx.moveTo(c * CELL, Y0); ctx.lineTo(c * CELL, Y0 + ROWS * CELL); } for (let r = 0; r <= ROWS; r++) { ctx.moveTo(0, Y0 + r * CELL); ctx.lineTo(COLS * CELL, Y0 + r * CELL); } ctx.stroke();
+    txt('P1 START', 50, Y0 + 3 * CELL + 28, 9, 'rgba(51,170,255,0.4)', 'center'); txt('P2 START', 750, Y0 + 3 * CELL + 28, 9, 'rgba(255,68,136,0.4)', 'center');
+    ctx.strokeStyle = '#00eaff'; ctx.shadowColor = '#00eaff'; ctx.shadowBlur = 8; ctx.lineWidth = 4; ctx.lineCap = 'round'; ctx.beginPath();
+    for (let r = 0; r < ROWS; r++) for (let c = 0; c <= COLS; c++) if (tank.v[r][c]) { ctx.moveTo(c * CELL, Y0 + r * CELL); ctx.lineTo(c * CELL, Y0 + (r + 1) * CELL); }
+    for (let r = 0; r <= ROWS; r++) for (let c = 0; c < COLS; c++) if (tank.h[r][c]) { ctx.moveTo(c * CELL, Y0 + r * CELL); ctx.lineTo((c + 1) * CELL, Y0 + r * CELL); }
+    ctx.stroke(); ctx.shadowBlur = 0; ctx.lineCap = 'butt';
+    if (edge && !btns.some(() => false)) { ctx.strokeStyle = edgeGet(edge) ? '#ff5566' : '#ffd24a'; ctx.lineWidth = 5; ctx.globalAlpha = 0.85; ctx.beginPath(); const e = edge; if (e.t === 'v') { ctx.moveTo(e.c * CELL, Y0 + e.r * CELL); ctx.lineTo(e.c * CELL, Y0 + (e.r + 1) * CELL); } else { ctx.moveTo(e.c * CELL, Y0 + e.r * CELL); ctx.lineTo((e.c + 1) * CELL, Y0 + e.r * CELL); } ctx.stroke(); ctx.globalAlpha = 1; }
+    // toolbar
+    ctx.fillStyle = '#07041a'; ctx.fillRect(0, 0, W, 36); ctx.fillStyle = '#00eaff'; ctx.fillRect(0, 34, W, 2);
+    const ok = tankConnected(tank);
+    button(6, 6, 76, 24, mirror ? 'MIRROR ✓' : 'MIRROR', '#ffd24a', () => { mirror = !mirror; }, { size: 10 });
+    button(88, 6, 54, 24, 'CLEAR', '#ff6677', () => { tank = blankTank(); }, { size: 10 }); button(148, 6, 66, 24, 'PRESET', '#aaaaaa', () => { tank = tankPreset(); }, { size: 10 });
+    button(220, 6, 80, 24, 'COPY CODE', '#7ad8ff', () => copyCode(tankEncode(tank)), { size: 10 }); button(306, 6, 84, 24, 'PASTE CODE', '#7ad8ff', pasteCode, { size: 10 });
+    button(398, 6, 60, 24, 'PLAY 1P', '#66ff99', () => playTank(1), { size: 10, off: !ok }); button(464, 6, 60, 24, 'PLAY 2P', '#66ff99', () => playTank(2), { size: 10, off: !ok });
+    button(530, 6, 50, 24, 'BACK', '#aaaaaa', () => { screen = 'home'; }, { size: 10 });
+    if (msgT > 0) { msgT--; txt(msg, 590, 22, 10, msgOk ? '#66ff99' : '#ff8888'); } else txt(ok ? 'click or drag on a wall line' : 'some areas are sealed off!', 590, 22, 10, ok ? 'rgba(255,255,255,0.5)' : '#ff8888');
+    txt(tankEncode(tank), 4, 398, 9, 'rgba(255,255,255,0.4)'); txt('share code', W - 4, 398, 9, 'rgba(255,255,255,0.3)', 'right');
+  }
+  function playTank(n) {
+    if (!tankConnected(tank)) { say('Every area must connect!', false); return; }
+    lsSet('arcade_map_tank', tank); lsSet('arcade_maker_code_tank', tankEncode(tank)); stop(); TankBattle.playCustom(n);
+  }
+
+  // ═══ RACER TRACK EDITOR ═══
+  const SEED = [[400, 100], [560, 100], [690, 160], [690, 260], [560, 320], [400, 320], [240, 320], [110, 260], [110, 160], [240, 100]];
+  let pts = SEED.map(p => p.slice()), drag = -1, rcl = null, rvalid = true, rwhy = '';
+  function racerCheck() {
+    rcl = NeonRacer.build(pts); rvalid = true; rwhy = '';
+    const N = rcl.length, minD = NeonRacer.HALF * 2 + 4;
+    for (let i = 0; i < N && rvalid; i += 2) for (let j = i + 40; j < N; j += 2) { if (j - i > N - 40) break; if (Math.hypot(rcl[i].x - rcl[j].x, rcl[i].y - rcl[j].y) < minD) { rvalid = false; rwhy = 'track is too tight or crosses itself'; break; } }
+    if (rvalid) for (let i = 0; i < N; i += 4) { const p = rcl[i]; if (p.x < 40 || p.x > 760 || p.y < 60 || p.y > 360) { rvalid = false; rwhy = 'keep the track inside the screen'; break; } }
+    if (rvalid) { let sharp = 0; for (let i = 0; i < N; i++) if (rcl[i].curve > 1.5) sharp++; if (sharp > 6) { rvalid = false; rwhy = 'a corner is too sharp'; } }
+  }
+  function nearPoint(p) { let bi = -1, bd = 14; pts.forEach((q, i) => { const d = Math.hypot(q[0] - p.x, q[1] - p.y); if (d < bd) { bd = d; bi = i; } }); return bi; }
+  function insertAt(p) {
+    if (pts.length >= 16) { say('Max 16 points', false); return; }
+    let bi = 0, bd = 1e9; for (let i = 0; i < pts.length; i++) { const a = pts[i], b = pts[(i + 1) % pts.length], dx = b[0] - a[0], dy = b[1] - a[1], l2 = dx * dx + dy * dy || 1, t = Math.max(0, Math.min(1, ((p.x - a[0]) * dx + (p.y - a[1]) * dy) / l2)), d = Math.hypot(a[0] + dx * t - p.x, a[1] + dy * t - p.y); if (d < bd) { bd = d; bi = i; } }
+    pts.splice(bi + 1, 0, [Math.round(p.x), Math.round(p.y)]); racerCheck();
+  }
+  function drawRacer() {
+    bgFill(); if (!rcl) racerCheck();
+    const col = rvalid ? '#ff66cc' : '#ff5566';
+    ctx.lineJoin = 'round'; ctx.lineCap = 'round'; ctx.beginPath(); rcl.forEach((p, i) => i ? ctx.lineTo(p.x, p.y) : ctx.moveTo(p.x, p.y)); ctx.closePath();
+    ctx.strokeStyle = col; ctx.shadowColor = col; ctx.shadowBlur = 14; ctx.lineWidth = NeonRacer.HALF * 2 + 4; ctx.globalAlpha = 0.55; ctx.stroke(); ctx.globalAlpha = 1; ctx.shadowBlur = 0; ctx.strokeStyle = '#0a0524'; ctx.lineWidth = NeonRacer.HALF * 2 - 4; ctx.stroke();
+    ctx.setLineDash([10, 14]); ctx.strokeStyle = 'rgba(255,255,255,0.18)'; ctx.lineWidth = 2; ctx.stroke(); ctx.setLineDash([]);
+    const s0 = rcl[0], a0 = s0.ang; ctx.save(); ctx.translate(s0.x, s0.y); ctx.rotate(a0 + Math.PI / 2); for (let k = -3; k < 3; k++) { ctx.fillStyle = (k & 1) ? '#fff' : '#222'; ctx.fillRect(k * 11, -3, 11, 6); } ctx.restore();
+    const N = rcl.length; [[0.15, '#ffd24a'], [0.45, '#ffd24a'], [0.78, '#ffd24a'], [0.3, '#b266ff'], [0.62, '#b266ff'], [0.92, '#b266ff']].forEach(([f, c]) => { const p = rcl[Math.floor(N * f)]; ctx.fillStyle = c; ctx.globalAlpha = 0.7; ctx.beginPath(); ctx.arc(p.x, p.y, 6, 0, TAU); ctx.fill(); ctx.globalAlpha = 1; });
+    pts.forEach((q, i) => { const on = drag === i || nearPoint(mouse) === i; ctx.fillStyle = i === 0 ? '#66ff99' : '#ffffff'; ctx.shadowColor = '#fff'; ctx.shadowBlur = on ? 14 : 4; ctx.beginPath(); ctx.arc(q[0], q[1], on ? 8 : 6, 0, TAU); ctx.fill(); ctx.shadowBlur = 0; });
+    ctx.fillStyle = '#07041a'; ctx.fillRect(0, 0, W, 36); ctx.fillStyle = col; ctx.fillRect(0, 34, W, 2);
+    button(6, 6, 80, 24, 'NEW (OVAL)', '#ff6677', () => { pts = SEED.map(p => p.slice()); racerCheck(); }, { size: 9 });
+    button(92, 6, 80, 24, 'COPY CODE', '#7ad8ff', () => copyCode(racerEncode(pts)), { size: 10 }); button(178, 6, 84, 24, 'PASTE CODE', '#7ad8ff', pasteCode, { size: 10 });
+    button(268, 6, 64, 24, 'PLAY IT', '#66ff99', playRacer, { size: 11, off: !rvalid }); button(338, 6, 50, 24, 'BACK', '#aaaaaa', () => { screen = 'home'; }, { size: 10 });
+    if (msgT > 0) { msgT--; txt(msg, 398, 22, 10, msgOk ? '#66ff99' : '#ff8888'); } else txt(rvalid ? 'click = add point · drag = move · right-click = remove' : rwhy + '!', 398, 22, 10, rvalid ? 'rgba(255,255,255,0.5)' : '#ff8888');
+    txt(racerEncode(pts), 4, 396, 9, 'rgba(255,255,255,0.4)'); txt('green = start line   yellow = boost   purple = oil', W - 4, 396, 9, 'rgba(255,255,255,0.3)', 'right');
+  }
+  function playRacer() { if (!rvalid) { say(rwhy + '!', false); return; } lsSet('arcade_maker_code_racer', racerEncode(pts)); const p = pts.map(q => q.slice()); stop(); NeonRacer.playCustom(p); }
+
+  // ── sharing ──
+  function copyCode(code) { try { navigator.clipboard.writeText(code).then(() => say('Code copied!'), () => say('Select the code at the bottom', false)); } catch (e) { say('Select the code at the bottom', false); } }
+  function importCode(raw) {
+    const code = String(raw || '').replace(/\s+/g, ''); if (!code) return false;
+    if (code[0] === 'T') { const m = tankDecode(code); if (m) { tank = m; screen = 'tank'; say(tankConnected(m) ? 'Map loaded!' : 'Loaded (has sealed areas)', tankConnected(m)); return true; } }
+    else if (code[0] === 'R') { const p = racerDecode(code); if (p) { pts = p; screen = 'racer'; racerCheck(); say('Track loaded!'); return true; } }
+    say('That code does not work', false); return false;
+  }
+  function pasteCode() { try { navigator.clipboard.readText().then(t => importCode(t), () => say('Press Ctrl+V to paste a code', false)); } catch (e) { say('Press Ctrl+V to paste a code', false); } }
+
+  // ═══ HOME ═══
+  function drawHome() {
+    bgFill(); glow('LEVEL MAKER', W / 2, 62, 40, '#ffffff', 'center', 18 + Math.sin(frame * 0.06) * 8); txt('Draw your own level, play it, and share the code with your friends!', W / 2, 90, 13, 'rgba(255,255,255,0.5)', 'center');
+    [['TANK MAP', 'draw walls for Tank Battle', '#00eaff', 60, () => { screen = 'tank'; }], ['RACER TRACK', 'shape a track for Neon Racer', '#ff66cc', 420, () => { screen = 'racer'; racerCheck(); }]].forEach(([t, s, c, x, fn]) => {
+      button(x, 120, 320, 140, t, c, fn, { size: 24, sub: s, fill: true });
+    });
+    const mc = lsGet('arcade_maker_code_tank', ''), rc = lsGet('arcade_maker_code_racer', '');
+    txt('Tank Battle: choose MAP: MY MAP on the 1P / 2P screen to play your last saved map.', W / 2, 296, 11, 'rgba(255,255,255,0.45)', 'center');
+    if (mc || rc) txt('Your last codes are saved: open an editor and press PASTE CODE to bring a friend’s level in.', W / 2, 314, 11, 'rgba(255,255,255,0.35)', 'center'); else txt('Friends can paste your code into PASTE CODE (or press Ctrl+V) to play your level.', W / 2, 314, 11, 'rgba(255,255,255,0.35)', 'center');
+    if (msgT > 0) { msgT--; txt(msg, W / 2, 340, 12, msgOk ? '#66ff99' : '#ff8888', 'center'); }
+    button(30, 360, 110, 28, 'BACK', '#aaaaaa', () => { stop(); showMenu(); });
+  }
+
+  // ── plumbing ──
+  function loop() {
+    if (!running) return; animId = requestAnimationFrame(loop); frame++; btns = [];
+    if (screen === 'tank') drawTank(); else if (screen === 'racer') drawRacer(); else drawHome();
+  }
+  const hit = (p) => { for (let i = btns.length - 1; i >= 0; i--) { const b = btns[i]; if (p.x >= b.x && p.x <= b.x + b.w && p.y >= b.y && p.y <= b.y + b.h) return b; } return null; };
+  function onMove(e) {
+    const p = pos(e); mouse.x = p.x; mouse.y = p.y; const b = hit(p); hov = b && !b.off ? b : null;
+    if (screen === 'tank') { edge = hov ? null : edgeAt(p); if (mouse.down && paint !== null && edge && edgeGet(edge) !== paint) edgeSet(edge, paint); }
+    else if (screen === 'racer' && drag >= 0) { pts[drag][0] = Math.max(40, Math.min(760, Math.round(p.x))); pts[drag][1] = Math.max(60, Math.min(360, Math.round(p.y))); racerCheck(); }
+    canvas.style.cursor = hov || (screen === 'tank' && edge) || (screen === 'racer' && nearPoint(p) >= 0) ? 'pointer' : 'default';
+  }
+  function onDown(e) {
+    if (e.button === 2) return; const p = pos(e), b = hit(p); mouse.down = true;
+    if (b) { if (!b.off && b.fn) b.fn(); mouse.down = false; return; }
+    if (screen === 'tank') { const ed = edgeAt(p); if (ed) { paint = !edgeGet(ed); edgeSet(ed, paint); } }
+    else if (screen === 'racer') { const i = nearPoint(p); if (i >= 0) drag = i; else if (p.y > 40) insertAt(p); }
+  }
+  function onUp() { mouse.down = false; paint = null; drag = -1; }
+  function onCtx(e) {
+    e.preventDefault(); if (screen !== 'racer') return; const i = nearPoint(pos(e));
+    if (i >= 0) { if (pts.length <= 5) say('Need at least 5 points', false); else { pts.splice(i, 1); racerCheck(); } }
+  }
+  function onKey(e) {
+    if (e.code === 'Escape') { if (screen === 'home') { stop(); showMenu(); } else screen = 'home'; return; }
+    if ((e.code === 'Delete' || e.code === 'Backspace') && screen === 'racer') { const i = nearPoint(mouse); if (i >= 0 && pts.length > 5) { pts.splice(i, 1); racerCheck(); } }
+  }
+  function onPaste(e) { if (!running) return; const t = (e.clipboardData && e.clipboardData.getData('text')) || ''; e.preventDefault(); importCode(t); }
+  function stop() {
+    running = false; if (animId) cancelAnimationFrame(animId); animId = null;
+    document.removeEventListener('keydown', onKey); document.removeEventListener('paste', onPaste); canvas.removeEventListener('mousemove', onMove); canvas.removeEventListener('mousedown', onDown); window.removeEventListener('mouseup', onUp); canvas.removeEventListener('contextmenu', onCtx); canvas.style.cursor = 'default';
+  }
+  function start() {
+    stop(); running = true; hideTouchControls(); screen = 'home'; frame = 0; msgT = 0; drag = -1; paint = null; edge = null; mouse.down = false;
+    document.addEventListener('keydown', onKey); document.addEventListener('paste', onPaste); canvas.addEventListener('mousemove', onMove); canvas.addEventListener('mousedown', onDown); window.addEventListener('mouseup', onUp); canvas.addEventListener('contextmenu', onCtx);
+    animId = requestAnimationFrame(loop);
+  }
+  return { start, stop, tankEncode, tankDecode, racerEncode, racerDecode, _t: { get tank() { return tank; }, set tank(v) { tank = v; }, get pts() { return pts; }, set pts(v) { pts = v; racerCheck(); }, get screen() { return screen; }, set screen(v) { screen = v; }, check: () => rvalid } };
+})();
+
+</script>
+  <script>
 // ===== reaction.js =====
 // Reaction Test: wait for the screen to go GREEN, then hit SPACE (or click) as fast as you can. 5 rounds.
 const ReactionTest = (() => {
@@ -10136,7 +10666,8 @@ const ArenaBrawler = (() => {
 
   function mk(i, ch) { const C = CHARS[ch || 0]; return { i, ch: ch || 0, x: i ? 600 : 200, y: FLOOR, vx: 0, vy: 0, face: i ? -1 : 1, hp: C.hp, hpMax: C.hp, guard: 100, atk: null, stun: 0, block: false, ground: true, ko: false, cd: 0, flash: 0, walk: 0, ai: 0, jumps: 0, fcd: 0 }; }
   function newRound() { F = [mk(0, chars[0]), mk(1, chars[1])]; proj = []; phase = 'intro'; pt = 0; timer = ROUND_FRAMES; msg = ''; }
-  function newMatch() { wins = [0, 0]; rnd = 1; newRound(); screen = 'play'; }
+  let rec = null, recN = 0, rpl = null;
+  function newMatch() { wins = [0, 0]; rnd = 1; newRound(); screen = 'play'; rec = []; recN = 0; }
   function spark(x, y, col, n, sp) { if (net && net.emit && !net.local) net.emit({ k: 'sp', x: Math.round(x), y: Math.round(y), c: col, n, s: sp }); for (let k = 0; k < n; k++) { const a = Math.random() * TAU, s = (0.4 + Math.random()) * sp; parts.push({ x, y, vx: Math.cos(a) * s, vy: Math.sin(a) * s, life: 18 + Math.random() * 12, col }); } }
 
   function readInput(f) {
@@ -10242,6 +10773,10 @@ const ArenaBrawler = (() => {
     fxStep();
     if (screen === 'menu' || screen === 'select') return;
     simStep();
+    if (!net && rec && screen === 'play') {
+      if (hitStop <= 0 && ++recN % 3 === 0 && rec.length < 3000) rec.push(core.snap());
+      if (phase === 'match' && !rec.saved) { rec.saved = true; saveRep(); }
+    }
   }
   function simStep() {
     if (hitStop > 0) { hitStop--; return; }
@@ -10260,6 +10795,46 @@ const ArenaBrawler = (() => {
     }
   }
 
+  // ── Replay: the last offline match is saved so you can watch it again ──
+  function saveRep() {
+    try {
+      if (rec.length < 20 || typeof Hub === 'undefined' || !Hub.rep) return;
+      const w = wins[0] >= 2 ? 0 : 1, names = ['P1', level ? 'CPU' : 'P2'];
+      Hub.rep.put('brawler_last', { game: 'brawler', title: CHARS[chars[0]].n + ' vs ' + CHARS[chars[1]].n, sub: names[w] + ' won ' + wins[0] + '-' + wins[1] + (level ? ' (' + ['', 'easy', 'medium', 'hard'][level] + ')' : ''), col: '#ff4488' }, { cols: COL, names, f: rec.slice() });
+      Hub.pop('MATCH REPLAY SAVED', '#ff4488', 'Watch it in REPLAYS');
+    } catch (e) {}
+  }
+  function playReplay(d, onExit) {
+    stop(); running = true; hideTouchControls(); net = { cols: d.cols, names: d.names }; level = 0; screen = 'replay'; parts = []; proj = []; F = []; frame = 0; shake = 0; m2t = 0; wins = [0, 0]; hitStop = 0;
+    rpl = { d, i: 0, sp: 1, pause: false, end: false, last: -1, exit: onExit };
+    document.addEventListener('keydown', rpKey); lastTs = performance.now(); acc = 0; animId = requestAnimationFrame(rpLoop);
+  }
+  function rpExit() { const ex = rpl && rpl.exit; rpl = null; stop(); net = null; screen = 'menu'; if (ex) ex(); else showMenu(); }
+  function rpKey(e) {
+    if (!rpl) return; const c = e.code; if (BLOCK.has(c)) e.preventDefault();
+    if (c === 'Escape') rpExit();
+    else if (c === 'Space') { if (rpl.end) { rpl.i = 0; rpl.last = -1; rpl.end = false; rpl.pause = false; F = []; } else rpl.pause = !rpl.pause; }
+    else if (c === 'KeyR' || c === 'Enter') { rpl.i = 0; rpl.last = -1; rpl.end = false; rpl.pause = false; F = []; }
+    else if (c === 'ArrowRight' || c === 'KeyD') rpl.sp = Math.min(4, rpl.sp * 2);
+    else if (c === 'ArrowLeft' || c === 'KeyA') rpl.sp = Math.max(0.25, rpl.sp / 2);
+  }
+  function rpLoop(ts) {
+    if (!running || !rpl) return; animId = requestAnimationFrame(rpLoop);
+    acc += Math.min(0.05, (ts - lastTs) / 1000 || 0); lastTs = ts;
+    while (acc >= 1 / 60) {
+      acc -= 1 / 60; fxStep();
+      if (!rpl.pause) {
+        const L = rpl.d.f.length - 1; rpl.i += rpl.sp / 3; if (rpl.i >= L) { rpl.i = L; rpl.pause = true; rpl.end = true; }
+        const k = Math.floor(rpl.i);
+        if (k !== rpl.last) { rpl.last = k; const old = F.length ? F.map(f => f.hp) : null; core.load(rpl.d.f[k]); if (old) F.forEach((f, i) => { if (f.hp < old[i]) { spark(f.x, f.y - 40, '#ffd24a', 10, 4); if (old[i] - f.hp > 15) shake = 6; } }); }
+      }
+      core.glide();
+    }
+    if (F.length) drawPlay(); else { ctx.fillStyle = '#080224'; ctx.fillRect(0, 0, W, H); }
+    const L = rpl.d.f.length - 1; ctx.fillStyle = 'rgba(255,255,255,0.15)'; ctx.fillRect(20, H - 14, W - 40, 4); ctx.fillStyle = '#ff66cc'; ctx.fillRect(20, H - 14, (W - 40) * (L ? rpl.i / L : 0), 4);
+    ctx.textAlign = 'center'; ctx.font = 'bold 11px monospace'; ctx.fillStyle = '#ff66cc'; ctx.fillText('REPLAY  x' + rpl.sp + (rpl.pause && !rpl.end ? '  PAUSED' : rpl.end ? '  THE END' : ''), W / 2, 92);
+    ctx.font = '10px monospace'; ctx.fillStyle = 'rgba(255,255,255,0.55)'; ctx.fillText('SPACE pause   A/D speed   R restart   ESC back', W / 2, H - 20); ctx.textAlign = 'left';
+  }
   function limb(x1, y1, x2, y2) { ctx.beginPath(); ctx.moveTo(x1, y1); ctx.lineTo(x2, y2); ctx.stroke(); }
   function drawF(f) {
     const col = f.flash > 0 && frame % 2 ? '#ffffff' : colOf(f.i), x = f.dx !== undefined ? f.dx : f.x, y = f.dy !== undefined ? f.dy : f.y, C = CHARS[f.ch || 0];
@@ -10372,8 +10947,8 @@ const ArenaBrawler = (() => {
   function onClick(e) {
     if (screen === 'select') { const p = pos(e); for (let i = 0; i < 4; i++) if (p.x >= SELX(i) && p.x <= SELX(i) + 176 && p.y >= 66 && p.y <= 302) { const k = !lock[0] ? 0 : 1; if (k === 1 && level > 0) return; pick[k] = i; selLock(k); return; } return; }
     if (screen !== 'menu') return; const i = hit4(pos(e)); if (i >= 0) { sel = i; level = MENU[i][2]; goSelect(); } }
-  function stop() { running = false; if (animId) cancelAnimationFrame(animId); animId = null; document.removeEventListener('keydown', onKey); document.removeEventListener('keyup', onUp); window.removeEventListener('blur', onBlur); canvas.removeEventListener('mousemove', onMove); canvas.removeEventListener('click', onClick); canvas.style.cursor = 'default'; }
-  function start() { stop(); running = true; hideTouchControls(); screen = 'menu'; sel = 0; frame = 0; parts = []; for (const k in keys) { keys[k] = false; prev[k] = false; } document.addEventListener('keydown', onKey); document.addEventListener('keyup', onUp); window.addEventListener('blur', onBlur); canvas.addEventListener('mousemove', onMove); canvas.addEventListener('click', onClick); animId = requestAnimationFrame(loop); }
+  function stop() { document.removeEventListener('keydown', rpKey); running = false; if (animId) cancelAnimationFrame(animId); animId = null; document.removeEventListener('keydown', onKey); document.removeEventListener('keyup', onUp); window.removeEventListener('blur', onBlur); canvas.removeEventListener('mousemove', onMove); canvas.removeEventListener('click', onClick); canvas.style.cursor = 'default'; }
+  function start() { stop(); net = null; running = true; hideTouchControls(); screen = 'menu'; sel = 0; frame = 0; parts = []; for (const k in keys) { keys[k] = false; prev[k] = false; } document.addEventListener('keydown', onKey); document.addEventListener('keyup', onUp); window.addEventListener('blur', onBlur); canvas.addEventListener('mousemove', onMove); canvas.addEventListener('click', onClick); animId = requestAnimationFrame(loop); }
   // ── Core used by the online version (brawler-online.js) ──
   const core = {
     CHARS, drawSelect,
@@ -10399,7 +10974,7 @@ const ArenaBrawler = (() => {
     onEvent(e) { if (e.k === 'sp') { const keep = net; spark(e.x, e.y, e.c, e.n, e.s); } else if (e.k === 'sh') shake = e.v; else if (e.k === 'snd') tone(e.f, e.d, e.t, e.v, e.e); else if (e.k === 'm2') { m2 = e.t; m2t = 60; } },
     getPhase() { return phase; }, winIdx() { return wins[0] >= 2 ? 0 : wins[1] >= 2 ? 1 : -1; },
   };
-  return { start, stop, core, _t: { get F() { return F; }, get phase() { return phase; }, get wins() { return wins; }, set level(v) { level = v; } } };
+  return { start, stop, playReplay, core, _t: { get F() { return F; }, get phase() { return phase; }, get wins() { return wins; }, set level(v) { level = v; } } };
 })();
 
 </script>
@@ -10426,6 +11001,7 @@ const Tutorial = (() => {
     'TANK BATTLE': ['Bounce your shots off walls to hit the other tank.', ['P1: A/D turn, W/S drive, F or SHIFT fires', 'P2: arrow keys, SPACE or ENTER fires', 'Shots bounce off walls - bank them around corners!', 'Grab crates: shield or triple shot. Pick a map!', 'Online: teams of 1, 2 or 3']],
     'NEON COOKIE': ['Click the cookie, buy upgrades, get rich.', ['Click the cookie (or press SPACE) to earn cookies', 'Spend cookies on helpers that bake for you', 'Buy upgrades to multiply your income']],
     'NEON RACER': ['Race round the neon track. Drift for speed!', ['Steer: A/D or arrows, accelerate: W / UP, brake: S / DOWN', 'Hold SPACE to drift around corners, SHIFT to boost', 'Yellow pads = boost, purple oil = slippery! 6 tracks', 'Online: race up to 6 friends']],
+    'PARTY MODE': ['Online party: a playlist of quick mini-games with a points table.', ['Create a room (or join a friend\u2019s code) with 2 to 8 players', 'The host picks the playlist: Reaction, Mash, Dodge, Snake, Gravity, Racer', '1st place = 5 points, 2nd = 3, 3rd = 2, everyone else = 1', 'Most points after the last game is the PARTY CHAMPION!']],
     'NEON DEFENSE': ['Build towers to stop the waves of enemies.', ['Pick a tower (keys 1-7) and click the grid to place it', 'New: TESLA chains lightning, BEAM lasers, BANK earns money', 'Boss waves on 5, 10, 15, 20 and 25 - each boss is different!', 'SPACE = next wave, F = fast forward, U upgrade, S sell', 'Online: play CO-OP with friends - shared base and money']],
     'REACTION TEST': ['How fast are your reflexes?', ['Wait for the screen to turn GREEN', 'Press SPACE (or click) the moment it does', 'Press too early and you have to redo the round', '5 rounds - your best average is saved']],
     'ARENA BRAWLER': ['Knock out your opponent in a best-of-3 duel.', ['Pick a fighter: BLAZE, TITAN (tough), NINJA (fast) or MAGE (fireballs)', 'P1: A/D move, W jump, F punch, G heavy attack, S block', 'P2: arrows move/jump, K punch, L heavy, DOWN block', 'Too many blocked hits = GUARD BREAK', 'Online: 1v1 duels or a 3-8 player TOURNAMENT!']],
@@ -10555,6 +11131,7 @@ const Hub = (() => {
     if (rank === 0 && L.length > 1) pop('NEW HIGH SCORE!', '#ffd24a', game + ': ' + v + unit); else if (rank === 0) pop('FIRST SCORE SAVED', '#7ad8ff', game + ': ' + v + unit); else if (rank > 0 && rank < 5) pop('TOP 5!  #' + (rank + 1), '#7ad8ff', game + ': ' + v + unit);
     if (game === 'REACTION TEST') { if (v < 250) unlock('quick'); if (v < 200) unlock('lightning'); }
     if (BIG[game] && v >= BIG[game]) unlock('big_' + game);
+    try { weeklyCheck(game, v); } catch (e) {}
     checkAch(); return rank;
   }
 
@@ -10562,7 +11139,7 @@ const Hub = (() => {
   const ACH = [
     { id: 'first', n: 'FIRST STEPS', d: 'Play any game', f: () => Object.keys(S.launch).length >= 1 },
     { id: 'explorer', n: 'EXPLORER', d: 'Play 5 different games', f: () => Object.keys(S.launch).length >= 5 },
-    { id: 'master', n: 'ARCADE MASTER', d: 'Play all 15 games', f: () => Object.keys(S.launch).length >= 15 },
+    { id: 'master', n: 'ARCADE MASTER', d: 'Play all 16 games', f: () => Object.keys(S.launch).length >= 16 },
     { id: 'marathon', n: 'MARATHON', d: 'Play for 30 minutes', f: () => S.total >= 1800 },
     { id: 'regular', n: 'REGULAR', d: 'Play for 2 hours', f: () => S.total >= 7200 },
     { id: 'online1', n: 'ONLINE DEBUT', d: 'Play an online match', f: () => S.online >= 1 },
@@ -10580,6 +11157,7 @@ const Hub = (() => {
     { id: 'lightning', n: 'LIGHTNING', d: 'React in under 200 ms', f: () => false },
     { id: 'big', n: 'SCORE CHASER', d: 'Beat a big target (SNAKE 15...)', f: () => Object.keys(AC).some(k => k.indexOf('big_') === 0) },
     { id: 'tourney', n: 'CHAMPION', d: 'Win a tournament', f: () => false },
+    { id: 'weekly', n: 'WEEKLY WINNER', d: 'Beat a weekly challenge', f: () => false },
   ];
   function unlock(id) {
     if (AC[id]) return; AC[id] = Date.now(); lsSet('arcade_ach', AC);
@@ -10588,6 +11166,58 @@ const Hub = (() => {
   function checkAch() { ACH.forEach(a => { if (!AC[a.id]) { try { if (a.f()) unlock(a.id); } catch (e) {} } }); }
   setInterval(checkAch, 2500);
   const event = (id) => unlock(id);
+
+
+  // ── Replays: saved best Racer laps + last Brawler match (kept in this browser) ──
+  let RI = lsGet('arcade_rep_idx', []);
+  const rep = {
+    put(id, meta, data) {
+      try { localStorage.setItem('arcade_rep_' + id, JSON.stringify(data)); } catch (e) { return false; }
+      RI = RI.filter(r => r.id !== id); RI.unshift(Object.assign({ id, d: dayKey() }, meta)); lsSet('arcade_rep_idx', RI); return true;
+    },
+    get(id) { try { return JSON.parse(localStorage.getItem('arcade_rep_' + id)); } catch (e) { return null; } },
+    del(id) { try { localStorage.removeItem('arcade_rep_' + id); } catch (e) {} RI = RI.filter(r => r.id !== id); lsSet('arcade_rep_idx', RI); },
+    list: () => RI,
+  };
+  let repPage = 0, repMsg = '', repMsgT = 0;
+  function playRep(r) {
+    const d = rep.get(r.id); if (!d) { repMsg = 'That replay could not be loaded.'; repMsgT = 200; return; }
+    const back = () => open('replays');
+    stopLoop(); if (typeof menuAnimFrame !== 'undefined' && menuAnimFrame) { cancelAnimationFrame(menuAnimFrame); menuAnimFrame = null; } hoveredCard = -1;
+    if (r.game === 'racer' && typeof NeonRacer !== 'undefined') NeonRacer.playReplay(d, back);
+    else if (r.game === 'brawler' && typeof ArenaBrawler !== 'undefined') ArenaBrawler.playReplay(d, back);
+    else back();
+  }
+  function drawReplays() {
+    bg('REPLAYS', '#ff66cc'); txt('watch your best Racer laps and your last Brawler match again', W / 2, 78, 11, 'rgba(255,255,255,0.5)', 'center');
+    const per = 6, n = RI.length, pages = Math.max(1, Math.ceil(n / per)); if (repPage >= pages) repPage = pages - 1;
+    if (!n) { txt('No replays yet.', W / 2, 180, 16, 'rgba(255,255,255,0.6)', 'center', true); txt('Set a new best lap in NEON RACER, or finish a match in ARENA BRAWLER (1 or 2 players),', W / 2, 208, 11, 'rgba(255,255,255,0.45)', 'center'); txt('and it shows up here automatically.', W / 2, 224, 11, 'rgba(255,255,255,0.45)', 'center'); }
+    RI.slice(repPage * per, repPage * per + per).forEach((r, i) => {
+      const y = 90 + i * 43; ctx.strokeStyle = r.col; ctx.lineWidth = 1.5; ctx.shadowColor = r.col; ctx.shadowBlur = 5; ctx.fillStyle = 'rgba(255,255,255,0.04)'; rr(60, y, 680, 38, 8); ctx.fill(); ctx.stroke(); ctx.shadowBlur = 0;
+      txt(r.game === 'racer' ? 'RACER' : 'BRAWLER', 74, y + 16, 9, r.col, 'left', true); txt(r.d.slice(5), 74, y + 30, 9, 'rgba(255,255,255,0.45)');
+      txt(r.title, 150, y + 17, 13, '#fff', 'left', true); txt(r.sub, 150, y + 31, 10, 'rgba(255,255,255,0.65)');
+      button(570, y + 5, 80, 28, 'WATCH', '#66ff99', () => playRep(r), { size: 11 }); button(660, y + 5, 70, 28, 'DELETE', '#ff6677', () => rep.del(r.id), { size: 9 });
+    });
+    if (pages > 1) { button(320, 360, 50, 28, '◀', '#7ad8ff', () => { repPage = (repPage + pages - 1) % pages; }); txt((repPage + 1) + '/' + pages, 400, 379, 12, '#fff', 'center'); button(430, 360, 50, 28, '▶', '#7ad8ff', () => { repPage = (repPage + 1) % pages; }); }
+    if (repMsgT > 0) { repMsgT--; txt(repMsg, W / 2, 352, 11, '#ff8888', 'center'); }
+    button(30, 360, 110, 28, 'BACK', '#aaaaaa', close);
+  }
+  // ── Weekly challenge: one game + one target per week, resets Monday ──
+  const WK = [{ g: 'SNAKE', t: [10, 15, 22] }, { g: 'PINBALL', t: [2500, 4000, 6500] }, { g: 'LASER DODGE', t: [120, 200, 300] }, { g: 'SPACE SHOOTER', t: [800, 1500, 2300] }, { g: 'REACTION TEST', t: [320, 270, 235], low: true }];
+  const weekKey = (d) => { d = d ? new Date(d) : new Date(); d.setHours(12, 0, 0, 0); d.setDate(d.getDate() - ((d.getDay() + 6) % 7)); return dayKey(d); };
+  const WS = Object.assign({ week: '', best: null, done: false, wins: 0 }, lsGet('arcade_weekly', {}));
+  function weekly() {
+    const wkk = weekKey(); if (WS.week !== wkk) { WS.week = wkk; WS.best = null; WS.done = false; lsSet('arcade_weekly', WS); }
+    const h = hash(wkk), c = WK[h % WK.length], tgt = c.t[(h >> 5) % 3], tier = (h >> 5) % 3;
+    const nxt = new Date(); nxt.setHours(12, 0, 0, 0); nxt.setDate(nxt.getDate() + (7 - ((nxt.getDay() + 6) % 7)));
+    return { g: c.g, low: !!c.low, tgt, tier, left: Math.max(1, Math.ceil((nxt - new Date()) / 86400000)), text: c.low ? 'React in under ' + tgt + ' ms' : 'Score ' + tgt + ' or more' };
+  }
+  function weeklyCheck(game, v) {
+    const w = weekly(); if (game !== w.g) return;
+    if (WS.best === null || (w.low ? v < WS.best : v > WS.best)) WS.best = v;
+    if (!WS.done && (w.low ? v <= w.tgt : v >= w.tgt)) { WS.done = true; WS.wins++; pop('WEEKLY CHALLENGE COMPLETE!', '#ff9f43', w.g + ': ' + w.text); unlock('weekly'); }
+    lsSet('arcade_weekly', WS);
+  }
 
   // ── Favourites ──
   let favs = lsGet('arcade_favs', []);
@@ -10603,14 +11233,15 @@ const Hub = (() => {
 
   // ── Menu buttons (top right) ──
   const MB = [{ id: 'settings', label: 'SETTINGS', w: 64 }, { id: 'stats', label: 'STATS', w: 48 }, { id: 'friends', label: 'FRIENDS', w: 58 }, { id: 'daily', label: 'DAILY', w: 52 }];
-  MB.unshift({ id: 'scores', label: 'SCORES', w: 54 }, { id: 'trophies', label: 'TROPHIES', w: 62 });
-  (() => { let x = W - 8; for (let i = MB.length - 1; i >= 2; i--) { x -= MB[i].w; MB[i].x = x; x -= 6; } MB[0].x = 8; MB[1].x = 8 + MB[0].w + 6; })();
+  MB.splice(MB.length - 1, 0, { id: 'weekly', label: 'WEEKLY', w: 54 });
+  MB.unshift({ id: 'scores', label: 'SCORES', w: 54 }, { id: 'trophies', label: 'TROPHIES', w: 62 }, { id: 'replays', label: 'REPLAYS', w: 58 }, { id: 'maker', label: 'MAKER', w: 50 });
+  (() => { const NL = MB.filter(b => ['scores', 'trophies', 'replays', 'maker'].includes(b.id)).length; let x = W - 8; for (let i = MB.length - 1; i >= NL; i--) { x -= MB[i].w; MB[i].x = x; x -= 6; } let lx = 8; for (let i = 0; i < NL; i++) { MB[i].x = lx; lx += MB[i].w + 6; } })();
   let mHover = -1;
   const pos = (cx, cy) => { const r = canvas.getBoundingClientRect(); return { x: (cx - r.left) * (W / r.width), y: (cy - r.top) * (H / r.height) }; };
   const mHit = (p) => MB.findIndex(b => p.x >= b.x && p.x <= b.x + b.w && p.y >= 8 && p.y <= 30);
   function drawButtons() {
     sortOnce(); MB.forEach((b, i) => {
-      const on = mHover === i, done = b.id === 'daily' && S.daily.day === dayKey() && S.daily.done, col = b.id === 'daily' ? (done ? '#66ff99' : '#ffd24a') : '#7ad8ff';
+      const on = mHover === i, done = b.id === 'daily' && S.daily.day === dayKey() && S.daily.done, col = b.id === 'daily' ? (done ? '#66ff99' : '#ffd24a') : b.id === 'weekly' ? '#ff9f43' : '#7ad8ff';
       ctx.strokeStyle = col; ctx.shadowColor = col; ctx.shadowBlur = on ? 14 : 4; ctx.lineWidth = on ? 2 : 1; ctx.fillStyle = on ? 'rgba(255,255,255,0.12)' : 'rgba(255,255,255,0.04)';
       ctx.beginPath(); ctx.moveTo(b.x + 6, 8); ctx.lineTo(b.x + b.w - 6, 8); ctx.quadraticCurveTo(b.x + b.w, 8, b.x + b.w, 14); ctx.lineTo(b.x + b.w, 24); ctx.quadraticCurveTo(b.x + b.w, 30, b.x + b.w - 6, 30); ctx.lineTo(b.x + 6, 30); ctx.quadraticCurveTo(b.x, 30, b.x, 24); ctx.lineTo(b.x, 14); ctx.quadraticCurveTo(b.x, 8, b.x + 6, 8); ctx.closePath(); ctx.fill(); ctx.stroke(); ctx.shadowBlur = 0;
       ctx.fillStyle = col; ctx.font = 'bold 9px monospace'; ctx.textAlign = 'center'; ctx.fillText(b.label + (done ? ' ✓' : ''), b.x + b.w / 2, 23);
@@ -10623,7 +11254,7 @@ const Hub = (() => {
   let sorted = false; function sortOnce() { if (!sorted) { sorted = true; sortGames(); } }
   const menuUp = () => typeof menuAnimFrame !== 'undefined' && !!menuAnimFrame;
   canvas.addEventListener('mousemove', (e) => { if (!menuUp()) { mHover = -1; return; } mHover = mHit(pos(e.clientX, e.clientY)); }, true);
-  function openFromMenu(id) { cancelAnimationFrame(menuAnimFrame); menuAnimFrame = null; hoveredCard = -1; canvas.style.cursor = 'default'; open(id); }
+  function openFromMenu(id) { cancelAnimationFrame(menuAnimFrame); menuAnimFrame = null; hoveredCard = -1; canvas.style.cursor = 'default'; if (id === 'maker' && typeof Maker !== 'undefined') { Maker.start(); return; } open(id); }
   canvas.addEventListener('click', (e) => {
     if (!menuUp()) return; const p = pos(e.clientX, e.clientY), i = mHit(p);
     if (i >= 0) { e.stopImmediatePropagation(); openFromMenu(MB[i].id); return; }
@@ -10750,7 +11381,7 @@ const Hub = (() => {
       txt(got ? '★' : '☆', x + 16, y + 28, 20, got ? '#ffd24a' : 'rgba(255,255,255,0.25)', 'center');
       txt(a.n, x + 32, y + 19, 10, got ? '#fff' : 'rgba(255,255,255,0.5)', 'left', true); txt(a.d, x + 32, y + 34, 8, got ? 'rgba(255,255,255,0.75)' : 'rgba(255,255,255,0.35)');
     });
-    button(30, 360, 110, 28, 'BACK', '#aaaaaa', close);
+    button(660, 360, 110, 28, 'BACK', '#aaaaaa', close);
   }
   const PAL = ['#33aaff', '#ff4488', '#78d94c', '#ffd24a', '#b266ff', '#ff8833', '#22ddb8', '#ff4455'];
   const PALN = ['BLUE', 'PINK', 'GREEN', 'YELLOW', 'PURPLE', 'ORANGE', 'TEAL', 'RED'];
@@ -10782,6 +11413,18 @@ const Hub = (() => {
     txt('MOST PLAYED', 40, 160, 12, '#7ad8ff', 'left', true);
     if (!top.length) txt('Play some games and your stats show up here!', W / 2, 250, 14, 'rgba(255,255,255,0.5)', 'center');
     top.forEach((t, i) => { const y = 172 + i * 22; txt(t, 40, y + 12, 11, '#fff'); bar(210, y + 3, 380, 10, S.secs[t] / max, '#7ad8ff'); txt(fmt(S.secs[t]), 600, y + 12, 11, '#fff'); txt('x' + (S.launch[t] || 0), 690, y + 12, 11, 'rgba(255,255,255,0.5)'); });
+    button(30, 360, 110, 28, 'BACK', '#aaaaaa', close);
+  }
+
+  function drawWeekly() {
+    bg('WEEKLY CHALLENGE', '#ff9f43'); const w = weekly(), g = GAMES.find(q => q.title === w.g), col = g ? g.color : '#ff9f43';
+    txt('THIS WEEK', W / 2, 100, 12, 'rgba(255,255,255,0.55)', 'center'); glow(w.g, W / 2, 142, 30, col, 'center', 12); glow(w.text, W / 2, 180, 20, '#fff', 'center', 6);
+    const have = WS.best, prog = have === null ? 0 : w.low ? Math.min(1, w.tgt / have) : Math.min(1, have / w.tgt);
+    bar(200, 200, 400, 16, WS.done ? 1 : prog, WS.done ? '#66ff99' : '#ff9f43');
+    txt(WS.done ? 'COMPLETE ✓  trophy unlocked' : have === null ? 'no score yet this week' : 'best this week: ' + have + (w.low ? ' ms' : ''), W / 2, 240, 14, WS.done ? '#66ff99' : '#fff', 'center', true);
+    txt('Challenges won: ' + WS.wins + '     New challenge in ' + w.left + ' day' + (w.left === 1 ? '' : 's') + ' (Monday)', W / 2, 278, 12, 'rgba(255,255,255,0.65)', 'center');
+    txt('Play the game from the menu or press the button, your score counts automatically.', W / 2, 304, 10, 'rgba(255,255,255,0.4)', 'center');
+    button(300, 316, 200, 34, 'PLAY ' + w.g, col, () => { const gm = GAMES.find(q => q.title === w.g); if (!gm) return; stopLoop(); if (typeof menuAnimFrame !== 'undefined' && menuAnimFrame) { cancelAnimationFrame(menuAnimFrame); menuAnimFrame = null; } hoveredCard = -1; gm.game().start(); }, { size: 11 });
     button(30, 360, 110, 28, 'BACK', '#aaaaaa', close);
   }
   function drawDaily() {
@@ -10840,7 +11483,7 @@ const Hub = (() => {
     txt(input ? input + (frame % 60 < 30 ? '|' : '') : (frame % 60 < 30 ? '|' : 'add a friend’s username'), 50, 379, 13, input ? '#fff' : 'rgba(255,255,255,0.35)');
     button(350, 360, 70, 28, 'ADD', '#66ff99', addFriend, { off: input.trim().length < 2 }); button(690, 360, 70, 28, 'BACK', '#aaaaaa', close);
   }
-  function loop() { if (!running) return; animId = requestAnimationFrame(loop); frame++; btns = []; if (screen === 'settings') drawSettings(); else if (screen === 'stats') drawStats(); else if (screen === 'scores') drawScores(); else if (screen === 'trophies') drawTrophies(); else if (screen === 'colour') drawColour(); else if (screen === 'daily') drawDaily(); else if (screen === 'music') drawMusic(); else if (screen === 'friends') drawFriends(); if (toast) { toast.shown++; } }
+  function loop() { if (!running) return; animId = requestAnimationFrame(loop); frame++; btns = []; if (screen === 'settings') drawSettings(); else if (screen === 'stats') drawStats(); else if (screen === 'scores') drawScores(); else if (screen === 'trophies') drawTrophies(); else if (screen === 'colour') drawColour(); else if (screen === 'daily') drawDaily(); else if (screen === 'weekly') drawWeekly(); else if (screen === 'replays') drawReplays(); else if (screen === 'music') drawMusic(); else if (screen === 'friends') drawFriends(); if (toast) { toast.shown++; } }
   function onKey(e) {
     if (e.code === 'Escape') { if (screen === 'music' || screen === 'colour') open('settings'); else close(); return; }
     if (screen === 'music') { if (e.key === 'Backspace') mInput = mInput.slice(0, -1); else if (e.key === 'Enter') loadLink(); else if (e.key.length === 1 && !e.ctrlKey && !e.metaKey && mInput.length < 200) mInput += e.key; return; }
@@ -10868,7 +11511,7 @@ const Hub = (() => {
   document.body.appendChild(pad);
   setInterval(() => { const want = (SET.touch === 'on' || (SET.touch === 'auto' && isTouch)) && typeof menuAnimFrame !== 'undefined' && !menuAnimFrame && !running; pad.style.display = want ? 'block' : 'none'; if (want) pad.lastChild.style.top = (-(window.innerHeight) + 14) + 'px'; }, 300);
 
-  return { drawButtons, cardMark, sortGames, Stats, open, SET, score, event, pop, PAL, myCol: () => SET.col };
+  return { rep, weekly, WS, drawButtons, cardMark, sortGames, Stats, open, SET, score, event, pop, PAL, myCol: () => SET.col };
 })();
 
 </script>
