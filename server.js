@@ -13,6 +13,8 @@ const GAMES = {
   racer:   { name: 'Neon Racer',  teams: false, max: 6 },
   gravity: { name: 'Gravity Changer', teams: false, max: 4 },
   snake:   { name: 'Snake Battle', teams: false, max: 6 },
+  defense: { name: 'Neon Defense', teams: false, max: 4 },
+  brawler: { name: 'Arena Brawler', teams: false, max: 8 },
 };
 const BAD = ['fuck', 'shit', 'bitch', 'cunt', 'dick', 'cock', 'penis', 'vagina', 'porn', 'sex', 'nigg', 'fag', 'rape', 'nazi', 'hitler', 'whore', 'slut', 'ass', 'damn', 'piss', 'boob', 'nude'];
 
@@ -57,12 +59,13 @@ function newCode() {
 }
 function maxPlayers(room) {
   const g = GAMES[room.game], s = room.settings || {};
+  if (room.game === 'brawler') return s.mode === 'tourney' ? 8 : 2;
   if (g.teams) return Math.max(1, Math.min(3, +s.size || 1)) * 2;
   return g.max;
 }
 function roomInfo(room) {
   return { code: room.code, game: room.game, host: room.host, pub: room.pub, started: room.started, settings: room.settings, max: maxPlayers(room), spec: (room.spec || []).length,
-    players: room.players.map(id => { const c = clients.get(id); return { id, name: c.name, team: c.team, ready: id === room.host ? true : !!c.ready }; }) };
+    players: room.players.map(id => { const c = clients.get(id); return { id, name: c.name, team: c.team, col: c.col === undefined ? -1 : c.col, ready: id === room.host ? true : !!c.ready }; }) };
 }
 function broadcastRoom(room) { const info = roomInfo(room); room.players.concat(room.spec || []).forEach(id => send(clients.get(id), { t: 'room', room: info })); }
 function balanceTeams(room) {
@@ -85,13 +88,58 @@ function leaveRoom(c, reason) {
   if (!room) return;
   if (c.spec) { c.spec = false; room.spec = (room.spec || []).filter(id => id !== c.id); broadcastRoom(room); return; }
   room.players = room.players.filter(id => id !== c.id);
+  if (room.t && room.host !== c.id && room.t.cur && (room.t.cur.a === c.id || room.t.cur.b === c.id)) tResolve(room, room.t.cur.a === c.id ? room.t.cur.b : room.t.cur.a);
   if (room.host === c.id) {
+    if (room.t) clearTimeout(room.t.timer);
     room.players.concat(room.spec || []).forEach(id => { const o = clients.get(id); o.room = null; o.spec = false; send(o, { t: 'closed', msg: 'The host left the room.' }); });
     rooms.delete(room.code);
   } else {
     if (!room.players.length) rooms.delete(room.code); else { room.players.forEach(id => send(clients.get(id), { t: 'left', id: c.id })); broadcastRoom(room); }
   }
 }
+// ── Tournament (Arena Brawler): single elimination for 3-8 players ──
+function toLobby(room) {
+  if (room.t) { clearTimeout(room.t.timer); room.t = null; }
+  (room.spec || []).forEach(id => { const o = clients.get(id); if (o) { o.room = null; o.spec = false; send(o, { t: 'closed', msg: 'The match ended.' }); } }); room.spec = [];
+  room.started = false; room.players.forEach(id => { clients.get(id).ready = false; }); broadcastRoom(room); room.players.forEach(id => send(clients.get(id), { t: 'lobby' }));
+}
+const tAll = (room, msg) => room.players.concat(room.spec || []).forEach(id => { const o = clients.get(id); if (o) send(o, msg); });
+function tBrief(room) { const T = room.t; room.players.forEach(id => { const o = clients.get(id); if (o) T.names[id] = o.name; }); return { rounds: T.rounds.map(R => R.map(m => ({ a: m.a, b: m.b, w: m.w }))), names: T.names }; }
+function tStart(room) {
+  const ids = room.players.slice().sort(() => Math.random() - 0.5); let size = 4; while (size < ids.length) size *= 2;
+  const m0 = size / 2, byes = size - ids.length, R0 = []; let k = 0;
+  for (let i = 0; i < m0; i++) { if (i < byes) R0.push({ a: ids[k++], b: 0, w: 0 }); else { R0.push({ a: ids[k++], b: ids[k++], w: 0 }); } }
+  const rounds = [R0]; let n = m0; while (n > 1) { n /= 2; rounds.push(Array.from({ length: n }, () => ({ a: 0, b: 0, w: 0 }))); }
+  room.t = { rounds, r: 0, i: 0, cur: null, names: {}, timer: null }; tAdvance(room);
+}
+const tValid = (room, id) => id > 0 && room.players.includes(id);
+function tPlace(T, mt) { if (T.r < T.rounds.length - 1) { const nm = T.rounds[T.r + 1][Math.floor(T.i / 2)], w = mt.w > 0 ? mt.w : 0; if (T.i % 2 === 0) nm.a = w; else nm.b = w; } }
+function tNextMatch(room) {
+  const T = room.t;
+  for (;;) {
+    const R = T.rounds[T.r]; const mt = R && R[T.i];
+    if (!mt) { if (T.r >= T.rounds.length - 1) return null; T.r++; T.i = 0; continue; }
+    const pa = tValid(room, mt.a), pb = tValid(room, mt.b);
+    if (!pa && !pb) { mt.w = -1; tPlace(T, mt); T.i++; continue; }
+    if (!pa || !pb) { mt.w = pa ? mt.a : mt.b; tPlace(T, mt); T.i++; continue; }
+    return mt;
+  }
+}
+function tAdvance(room) {
+  const T = room.t; clearTimeout(T.timer); const mt = tNextMatch(room);
+  if (!mt) { const ch = T.rounds[T.rounds.length - 1][0].w; tAll(room, { t: 'bracket', br: tBrief(room), champ: ch > 0 ? ch : 0 }); T.timer = setTimeout(() => { if (rooms.get(room.code) === room && room.t === T) toLobby(room); }, 10000); return; }
+  tAll(room, { t: 'bracket', br: tBrief(room), next: [mt.a, mt.b], secs: 6 });
+  T.timer = setTimeout(() => tGo(room, T), 6000);
+}
+function tGo(room, T) {
+  if (rooms.get(room.code) !== room || room.t !== T) return;
+  const mt = tNextMatch(room); if (!mt) { tAdvance(room); return; }
+  T.cur = mt; const seed = Math.floor(Math.random() * 1e9), br = tBrief(room);
+  room.players.forEach(id => send(clients.get(id), { t: 'start', room: roomInfo(room), seed, match: [mt.a, mt.b], br }));
+  (room.spec || []).forEach(id => send(clients.get(id), { t: 'start', room: roomInfo(room), seed, spec: true, match: [mt.a, mt.b], br }));
+}
+function tResolve(room, w) { const T = room.t; if (!T || !T.cur) return; const mt = T.cur; T.cur = null; mt.w = w; tPlace(T, mt); T.i++; tAdvance(room); }
+
 function publicList(game) {
   const out = [];
   rooms.forEach(r => { if (r.pub && (!game || r.game === game) && (r.started || r.players.length < maxPlayers(r))) { const h = clients.get(r.host); out.push({ code: r.code, game: r.game, host: h ? h.name : '?', n: r.players.length, max: maxPlayers(r), settings: r.settings, started: r.started }); } });
@@ -110,7 +158,7 @@ wss.on('connection', (ws) => {
     if (!m || typeof m.t !== 'string') return;
     const room = c.room ? rooms.get(c.room) : null;
     switch (m.t) {
-      case 'hello': c.name = cleanName(m.name); send(c, { t: 'welcome', id: c.id, name: c.name }); if (room) broadcastRoom(room); break;
+      case 'hello': c.name = cleanName(m.name); c.col = (Number.isInteger(m.col) && m.col >= 0 && m.col < 8) ? m.col : -1; send(c, { t: 'welcome', id: c.id, name: c.name }); if (room) broadcastRoom(room); break;
       case 'list': send(c, { t: 'rooms', list: publicList(m.game) }); break;
       case 'create': {
         if (room) leaveRoom(c);
@@ -126,9 +174,10 @@ wss.on('connection', (ws) => {
         if (!r) { send(c, { t: 'err', msg: 'No room with code ' + code + '.' }); return; }
         if (room) leaveRoom(c);
         if (r.started) {
+          if (r.t && !r.t.cur) { send(c, { t: 'err', msg: 'Tournament between matches. Try again in a few seconds.' }); return; }
           r.spec = r.spec || []; if (r.spec.length >= 10) { send(c, { t: 'err', msg: 'Too many people watching.' }); return; }
           r.spec.push(c.id); c.room = code; c.spec = true; c.team = 0;
-          send(c, { t: 'start', room: roomInfo(r), seed: 0, spec: true }); broadcastRoom(r); send(clients.get(r.host), { t: 'spec' }); return;
+          send(c, { t: 'start', room: roomInfo(r), seed: 0, spec: true, match: r.t && r.t.cur ? [r.t.cur.a, r.t.cur.b] : undefined }); broadcastRoom(r); send(clients.get(r.host), { t: 'spec' }); return;
         }
         if (r.players.length >= maxPlayers(r)) { send(c, { t: 'err', msg: 'That room is full.' }); return; }
         r.players.push(c.id); c.room = code; c.team = -1; balanceTeams(r); broadcastRoom(r); break;
@@ -182,15 +231,19 @@ wss.on('connection', (ws) => {
         if (g.teams) { const a = room.players.filter(id => clients.get(id).team === 0).length, b = room.players.length - a; if (!a || !b) { send(c, { t: 'err', msg: 'Each team needs at least 1 player.' }); return; } }
         const waiting = room.players.filter(id => id !== room.host && !clients.get(id).ready);
         if (waiting.length) { send(c, { t: 'err', msg: 'Waiting for ' + clients.get(waiting[0]).name + (waiting.length > 1 ? ' and ' + (waiting.length - 1) + ' more' : '') + ' to press READY.' }); return; }
+        if (room.game === 'brawler') {
+          if (room.settings.mode === 'tourney' && room.players.length < 3) { send(c, { t: 'err', msg: 'A tournament needs 3 or more players (use Duel for 2).' }); return; }
+          if (room.settings.mode !== 'tourney' && room.players.length !== 2) { send(c, { t: 'err', msg: 'A duel needs exactly 2 players. Switch to Tournament for more.' }); return; }
+        }
         room.players.forEach(id => { clients.get(id).ready = false; });
         room.started = true; broadcastRoom(room);
+        if (room.game === 'brawler' && room.settings.mode === 'tourney') { tStart(room); break; }
         room.players.forEach(id => send(clients.get(id), { t: 'start', room: roomInfo(room), seed: Math.floor(Math.random() * 1e9) }));
         break;
       }
-      case 'lobby': if (room && room.host === c.id) {
-        (room.spec || []).forEach(id => { const o = clients.get(id); if (o) { o.room = null; o.spec = false; send(o, { t: 'closed', msg: 'The match ended.' }); } }); room.spec = [];
-        room.started = false; room.players.forEach(id => { clients.get(id).ready = false; }); broadcastRoom(room); room.players.forEach(id => send(clients.get(id), { t: 'lobby' })); } break;
-      case 'again': if (room && room.host === c.id && room.started) {
+      case 'lobby': if (room && room.host === c.id) toLobby(room); break;
+      case 'tres': if (room && room.host === c.id && room.t && room.t.cur) { const w = +m.w; if (w === room.t.cur.a || w === room.t.cur.b) tResolve(room, w); } break;
+      case 'again': if (room && room.host === c.id && room.started && !room.t) {
         room.players.forEach(id => { clients.get(id).ready = false; }); broadcastRoom(room);
         const seed = Math.floor(Math.random() * 1e9); room.players.forEach(id => send(clients.get(id), { t: 'start', room: roomInfo(room), seed })); (room.spec || []).forEach(id => send(clients.get(id), { t: 'start', room: roomInfo(room), seed, spec: true })); } break;
       case 'in': { if (!room || !room.started || c.spec) return; const h = clients.get(room.host); if (h && h.id !== c.id) send(h, { t: 'in', from: c.id, d: m.d }); break; }
@@ -204,10 +257,12 @@ wss.on('connection', (ws) => {
 
 function sanitizeSettings(game, s) {
   s = s || {}; const o = {};
-  if (game === 'tank') { o.size = Math.max(1, Math.min(3, +s.size || 1)); o.rounds = [3, 5, 7].includes(+s.rounds) ? +s.rounds : 5; }
+  if (game === 'tank') { o.size = Math.max(1, Math.min(3, +s.size || 1)); o.rounds = [3, 5, 7].includes(+s.rounds) ? +s.rounds : 5; o.map = [0, 1, 2, 3, 4].includes(+s.map) ? +s.map : 4; }
   else if (game === 'boost') { o.size = Math.max(1, Math.min(3, +s.size || 1)); o.goals = [5, 10].includes(+s.goals) ? +s.goals : 5; o.mins = [1, 2, 3].includes(+s.mins) ? +s.mins : 2; }
-  else if (game === 'racer') { o.track = Math.max(0, Math.min(2, +s.track || 0)); o.laps = [2, 3, 4].includes(+s.laps) ? +s.laps : 3; }
+  else if (game === 'racer') { o.track = Math.max(0, Math.min(5, +s.track || 0)); o.laps = [2, 3, 4].includes(+s.laps) ? +s.laps : 3; }
   else if (game === 'snake') { o.speed = Math.max(1, Math.min(3, +s.speed || 2)); o.walls = s.walls === 'wrap' ? 'wrap' : 'solid'; }
+  else if (game === 'brawler') { o.mode = s.mode === 'tourney' ? 'tourney' : 'duel'; }
+  else if (game === 'defense') { o.diff = [0, 1, 2].includes(+s.diff) ? +s.diff : 1; }
   else if (game === 'gravity') { o.mode = ['versus', 'race', 'coop'].includes(s.mode) ? s.mode : 'versus'; }
   return o;
 }
