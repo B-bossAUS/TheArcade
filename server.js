@@ -16,6 +16,9 @@ const GAMES = {
   defense: { name: 'Neon Defense', teams: false, max: 4 },
   brawler: { name: 'Arena Brawler', teams: false, max: 8 },
   party:   { name: 'Party Mode', teams: false, max: 8 },
+  ctf:     { name: 'Capture the Flag', teams: true, maxPer: 3 },
+  zombie:  { name: 'Zombie Waves', teams: false, max: 4 },
+  lights:  { name: 'Lights Out', teams: false, max: 8 },
 };
 const BAD = ['fuck', 'shit', 'bitch', 'cunt', 'dick', 'cock', 'penis', 'vagina', 'porn', 'sex', 'nigg', 'fag', 'rape', 'nazi', 'hitler', 'whore', 'slut', 'ass', 'damn', 'piss', 'boob', 'nude'];
 
@@ -265,6 +268,9 @@ function sanitizeSettings(game, s) {
   else if (game === 'brawler') { o.mode = s.mode === 'tourney' ? 'tourney' : 'duel'; }
   else if (game === 'defense') { o.diff = [0, 1, 2].includes(+s.diff) ? +s.diff : 1; }
   else if (game === 'party') { const K = ['react', 'mash', 'dodge', 'snake', 'gravity', 'racer']; let l = Array.isArray(s.list) ? s.list.filter((x, i, a) => K.includes(x) && a.indexOf(x) === i) : []; if (!l.length) l = ['react', 'mash', 'dodge', 'snake']; o.list = l; }
+  else if (game === 'ctf') { o.size = Math.max(1, Math.min(3, +s.size || 1)); o.caps = [3, 5].includes(+s.caps) ? +s.caps : 3; }
+  else if (game === 'zombie') { o.diff = [0, 1, 2].includes(+s.diff) ? +s.diff : 1; }
+  else if (game === 'lights') { o.rounds = [3, 5, 8].includes(+s.rounds) ? +s.rounds : 3; o.time = [45, 60, 90].includes(+s.time) ? +s.time : 60; }
   else if (game === 'gravity') { o.mode = ['versus', 'race', 'coop'].includes(s.mode) ? s.mode : 'versus'; }
   return o;
 }
