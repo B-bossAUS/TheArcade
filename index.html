@@ -601,7 +601,7 @@ const GAMES = [
   },
   {
     title: 'PARTY MODE',
-    subtitle: 'Online mini-game playlist',
+    subtitle: 'Mini-games • online too',
     color: '#ff9f43',
     drawIcon(cx, cy) {
       const t = menuFrame * 0.05;
@@ -613,11 +613,11 @@ const GAMES = [
       ctx.fillStyle = '#ffd24a'; ctx.shadowColor = '#ffd24a'; ctx.shadowBlur = 8; for (let k = 0; k < 6; k++) { const a = t * 2 + k, r = 24 + (k % 2) * 6; ctx.fillRect(Math.cos(a) * r - 1.5, Math.sin(a) * r * 0.7 - 1.5, 3, 3); } ctx.shadowBlur = 0;
       ctx.restore();
     },
-    game: () => Tutorial.wrap('PARTY MODE', '#ff9f43', () => PartyEntry),
+    game: () => Tutorial.wrap('PARTY MODE', '#ff9f43', () => OnlineChoice.make('party', () => PartyOffline, 'PARTY MODE', '#ff9f43')),
   },
   {
     title: 'CAPTURE THE FLAG',
-    subtitle: 'Online team game',
+    subtitle: 'vs bots • online too',
     color: '#ff8a1f',
     drawIcon(cx, cy) {
       const t = menuFrame * 0.05;
@@ -626,11 +626,11 @@ const GAMES = [
       ctx.fillStyle = '#fff'; ctx.shadowColor = '#fff'; ctx.shadowBlur = 8; ctx.beginPath(); ctx.arc(Math.sin(t) * 18, 12 + Math.cos(t * 2) * 3, 5, 0, Math.PI * 2); ctx.fill(); ctx.shadowBlur = 0;
       ctx.restore();
     },
-    game: () => Tutorial.wrap('CAPTURE THE FLAG', '#ff8a1f', () => CtfEntry),
+    game: () => Tutorial.wrap('CAPTURE THE FLAG', '#ff8a1f', () => OnlineChoice.make('ctf', () => CtfOffline, 'CAPTURE THE FLAG', '#ff8a1f')),
   },
   {
     title: 'ZOMBIE WAVES',
-    subtitle: 'Online co-op survival',
+    subtitle: 'Co-op • online too',
     color: '#6bff9a',
     drawIcon(cx, cy) {
       const t = menuFrame * 0.05;
@@ -641,11 +641,11 @@ const GAMES = [
       ctx.fillStyle = '#33aaff'; ctx.beginPath(); ctx.arc(22, 2, 7, 0, Math.PI * 2); ctx.fill();
       ctx.restore();
     },
-    game: () => Tutorial.wrap('ZOMBIE WAVES', '#6bff9a', () => ZombieEntry),
+    game: () => Tutorial.wrap('ZOMBIE WAVES', '#6bff9a', () => OnlineChoice.make('zombie', () => ZombieOffline, 'ZOMBIE WAVES', '#6bff9a')),
   },
   {
     title: 'LIGHTS OUT',
-    subtitle: 'Online hide and seek',
+    subtitle: 'Hide & seek • online too',
     color: '#b28cff',
     drawIcon(cx, cy) {
       const t = menuFrame * 0.05;
@@ -656,7 +656,7 @@ const GAMES = [
       ctx.fillStyle = '#fff'; ctx.beginPath(); ctx.arc(-18, 10, 2, 0, Math.PI * 2); ctx.fill();
       ctx.restore();
     },
-    game: () => Tutorial.wrap('LIGHTS OUT', '#b28cff', () => LightsEntry),
+    game: () => Tutorial.wrap('LIGHTS OUT', '#b28cff', () => OnlineChoice.make('lights', () => LightsOffline, 'LIGHTS OUT', '#b28cff')),
   },
 ];
 
@@ -10823,6 +10823,152 @@ OnlineGames.lights = (() => {
   return { id: 'lights', title: 'LIGHTS OUT', color: '#b28cff', teams: false, create };
 })();
 const LightsEntry = { start() { Online.start('lights', () => showMenu()); }, stop() { Online.stop(); } };
+
+</script>
+  <script>
+// ===== offline-play.js =====
+// Offline play for the three online-only games: the same game code runs on this computer and computer players (bots)
+// fill the other seats. OfflinePlay.make(gameId, title, color) gives an object with start()/stop() like every other game.
+const OfflinePlay = (() => {
+  const dir = (dx, dy) => [dx > 0.35 ? 1 : dx < -0.35 ? -1 : 0, dy > 0.35 ? 1 : dy < -0.35 ? -1 : 0];
+  const dist = (a, b) => Math.hypot(a.x - b.x, a.y - b.y);
+  function steer(m, p, tx, ty) {
+    if (m.lx != null && Math.hypot(p.x - m.lx, p.y - m.ly) < 0.4) m.stuck = (m.stuck || 0) + 1; else m.stuck = 0;
+    m.lx = p.x; m.ly = p.y; let dx = tx - p.x, dy = ty - p.y; const d = Math.hypot(dx, dy) || 1; dx /= d; dy /= d;
+    if (m.stuck > 6 && !(m.side > 0)) { m.side = 35; m.sd = Math.random() < 0.5 ? 1 : -1; }
+    if (m.side > 0) { m.side--; const ox = -dy * m.sd, oy = dx * m.sd; dx = ox * 0.9 + dx * 0.3; dy = oy * 0.9 + dy * 0.3; }
+    return dir(dx, dy);
+  }
+  // ── bot brains: read a snapshot, return the same input object a human would send ──
+  const BRAIN = {
+    ctf(bot, s) {
+      const me = s.P.map(a => ({ id: a[0], x: a[1], y: a[2], team: a[3], stun: a[4], carry: !!a[5], sta: a[7] })).find(p => p.id === bot.id), all = s.P.map(a => ({ id: a[0], x: a[1], y: a[2], team: a[3], stun: a[4], carry: !!a[5] }));
+      if (!me || s.ph !== 'play') return { dx: 0, dy: 0, dash: false };
+      const t = me.team, m = bot.mem, ownF = { x: s.F[t][0], y: s.F[t][1], s: s.F[t][2], by: s.F[t][3] }, enF = { x: s.F[1 - t][0], y: s.F[1 - t][1], s: s.F[1 - t][2], by: s.F[1 - t][3] };
+      const homeX = t === 0 ? 50 : 750, onMyHalf = x => (t === 0 ? x < 400 : x > 400);
+      let tx, ty, dash = false;
+      const foes = all.filter(p => p.team !== t && p.stun <= 0);
+      const nearFoe = foes.reduce((b, p) => (!b || dist(p, me) < dist(b, me) ? p : b), null);
+      if (me.carry) { tx = homeX; ty = 218; if (nearFoe && dist(nearFoe, me) < 90) dash = true; if (ownF.s !== 0) { tx = ownF.x; ty = ownF.y; } }
+      else if (ownF.s === 1) { const c = all.find(p => p.id === ownF.by); if (c) { tx = c.x; ty = c.y; dash = dist(c, me) < 110; } }
+      else if (ownF.s === 2 && onMyHalf(ownF.x)) { tx = ownF.x; ty = ownF.y; }
+      else if (bot.role === 'def') {
+        if (nearFoe && onMyHalf(nearFoe.x) && dist(nearFoe, me) < 125) { tx = nearFoe.x; ty = nearFoe.y; dash = dist(nearFoe, me) < 70; }
+        else { tx = homeX + (t === 0 ? 90 : -90); ty = 218 + Math.sin(bot.f / 60) * 70; }
+      }
+      else if (enF.s === 1) { const c = all.find(p => p.id === enF.by); if (c && c.team === t) { tx = homeX; ty = 218; } else { tx = enF.x; ty = enF.y; } }
+      else { tx = enF.x; ty = enF.y; if (nearFoe && dist(nearFoe, me) < 120 && !onMyHalf(me.x) && dist(me, enF) > 110) { ty = Math.max(130, Math.min(330, me.y + (me.y >= nearFoe.y ? 110 : -110))); tx = me.x + (homeX < 400 ? 60 : -60); dash = dist(nearFoe, me) < 100; } }
+      bot.f++; const [dx, dy] = steer(m, me, tx, ty); return { dx, dy, dash: dash && me.sta > 30 };
+    },
+    zombie(bot, s) {
+      const me = s.P.find(a => a[0] === bot.id); if (!me) return { dx: 0, dy: 0, dash: false, pick: -1, pn: 0 };
+      const p = { x: me[1], y: me[2] }, m = bot.mem; let fx = 0, fy = 0, close = 1e9;
+      for (const z of s.Z) { const d = Math.hypot(z[0] - p.x, z[1] - p.y); close = Math.min(close, d); if (d < 150) { fx += (p.x - z[0]) / (d * d + 1) * 80; fy += (p.y - z[1]) / (d * d + 1) * 80; } }
+      // gentle pull to the middle and away from walls
+      fx += (400 - p.x) * 0.0016; fy += (218 - p.y) * 0.0016; if (p.x < 40) fx += 1; if (p.x > 760) fx -= 1; if (p.y < 70) fy += 1; if (p.y > 370) fy -= 1;
+      if (Math.abs(fx) + Math.abs(fy) < 0.2) { fx = Math.cos(bot.f / 50 + bot.n); fy = Math.sin(bot.f / 50 + bot.n); }
+      bot.f++; let [dx, dy] = dir(fx, fy);
+      if (m.lx != null && Math.hypot(p.x - m.lx, p.y - m.ly) < 0.3 && (dx || dy)) { m.stuck = (m.stuck || 0) + 1; } else m.stuck = 0; m.lx = p.x; m.ly = p.y;
+      if (m.stuck > 8) { [dx, dy] = dir(-fy + 0.001, fx); if (m.stuck > 40) m.stuck = 0; }
+      const out = { dx, dy, dash: close < 38 && me[9] <= 0, pick: -1, pn: m.pn || 0 };
+      if (s.ph === 'up' && !me[11] && me[10]) { if (m.pickT == null) m.pickT = 40 + Math.floor(Math.random() * 120); if (--m.pickT <= 0) { m.pn = (m.pn || 0) + 1; out.pn = m.pn; out.pick = Math.floor(Math.random() * 3); } } else m.pickT = null;
+      return out;
+    },
+    party(bot, s) {
+      const m = bot.mem, none = { s: null };
+      if (s.ph !== 'play' || !s.sub) { return none; }
+      const id = s.list[s.gi], sub = s.sub; if (m.gi !== s.gi) { m.gi = s.gi; m.p = 0; m.goAt = null; m.last = 0; m.nextHit = 0; m.rate = 6 + (bot.n * 2) + Math.floor(Math.random() * 3); } bot.f++;
+      if (id === 'react') {
+        if (sub.ph === 'go') { if (m.goAt == null) m.goAt = bot.f + 14 + Math.floor(Math.random() * 30 + bot.n * 6); if (bot.f >= m.goAt && !m.done) { m.p++; m.done = true; } } else { m.goAt = null; m.done = false; }
+        return { s: { p: m.p } };
+      }
+      if (id === 'mash') { if (sub.ph === 'play' && bot.f >= m.nextHit) { m.p++; m.nextHit = bot.f + m.rate + Math.floor(Math.random() * 3); } return { s: { p: m.p } }; }
+      if (id === 'dodge') {
+        const me = sub.P.find(a => a[0] === bot.id); if (!me || !me[2]) return { s: { d: 0 } };
+        let best = me[1], bc = 1e9; for (let x = 16; x <= 784; x += 12) { let c = Math.abs(x - me[1]) * 0.04; for (const b of sub.B) { const dy = 358 - b[1]; if (dy > -30 && dy < 190 && x + 16 > b[0] && x - 16 < b[0] + b[2]) c += 200 - Math.max(0, dy) * 0.5 + (dy < 60 ? 150 : 0); } c += Math.random() * 3; if (c < bc) { bc = c; best = x; } }
+        if (Math.random() < 0.02 + bot.n * 0.01) best = me[1] + (Math.random() - 0.5) * 120;
+        return { s: { d: best > me[1] + 3 ? 1 : best < me[1] - 3 ? -1 : 0 } };
+      }
+      if (id === 'snake') {
+        const me = sub.S.find(a => a[0] === bot.id); if (!me || !me[3]) return { s: { d: me ? me[4] : 0 } };
+        const occ = new Set(); sub.S.forEach(k => k[6].forEach(c => occ.add(c))); const head = me[6][0], hx = head % 40, hy = Math.floor(head / 40), DX = [0, 1, 0, -1], DY = [-1, 0, 1, 0];
+        const food = sub.f || [], tgt = food.reduce((b, c) => { const d = Math.abs(c % 40 - hx) + Math.abs(Math.floor(c / 40) - hy); return !b || d < b.d ? { c, d } : b; }, null);
+        let bestD = me[4], bs = -1e9;
+        for (let d = 0; d < 4; d++) { if ((d + 2) % 4 === me[4]) continue; const x = hx + DX[d], y = hy + DY[d]; let sc = Math.random() * 0.5; if (x < 0 || x >= 40 || y < 0 || y >= 20 || occ.has(y * 40 + x)) sc -= 100; else { let open = 0; for (let e = 0; e < 4; e++) { const nx = x + DX[e], ny = y + DY[e]; if (nx >= 0 && nx < 40 && ny >= 0 && ny < 20 && !occ.has(ny * 40 + nx)) open++; } sc += open * 2; if (tgt) sc -= (Math.abs(tgt.c % 40 - x) + Math.abs(Math.floor(tgt.c / 40) - y)) * 0.3; if (d === me[4]) sc += 0.4; } if (sc > bs) { bs = sc; bestD = d; } }
+        return { s: { d: bestD } };
+      }
+      return none;
+    },
+    lights(bot, s) {
+      const P = s.P.map(a => ({ id: a[0], x: a[1], y: a[2], caught: a[3], ang: a[4] })), me = P.find(p => p.id === bot.id), m = bot.mem; if (!me || me.caught) return { dx: 0, dy: 0, sneak: false };
+      const sk = P.find(p => p.id === s.sk); bot.f++;
+      if (s.sk === bot.id) {
+        if (s.ph === 'hide') return { dx: 0, dy: 0 };
+        const prey = P.filter(p => p.id !== bot.id && !p.caught).reduce((b, p) => (!b || dist(p, me) < dist(b, me) ? p : b), null);
+        if (prey && dist(prey, me) < 150) { const [dx, dy] = steer(m, me, prey.x, prey.y); return { dx, dy }; }
+        if (!m.w || dist(m.w, me) < 22 || bot.f % 400 === 0) m.w = { x: 40 + Math.random() * 720, y: 60 + Math.random() * 320 };
+        const [dx, dy] = steer(m, me, m.w.x, m.w.y); return { dx, dy };
+      }
+      // hider: walk to a hiding spot while the seeker counts, then keep still unless the seeker gets close
+      if (s.ph === 'roundend') { m.spot = null; return { dx: 0, dy: 0, sneak: false }; }
+      if (!m.spot) { const spots = [[100, 70], [100, 330], [700, 70], [700, 330], [260, 110], [540, 290], [400, 55], [400, 345], [75, 235], [725, 235], [200, 235], [600, 235], [400, 160]]; const q = spots[Math.floor(Math.random() * spots.length)]; m.spot = { x: q[0], y: q[1] }; }
+      const near = sk ? dist(sk, me) : 999;
+      if (s.ph === 'seek' && near < 110) { const [dx, dy] = steer(m, me, me.x + (me.x - sk.x) * 3, me.y + (me.y - sk.y) * 3); return { dx, dy, sneak: false }; }
+      if (dist(m.spot, me) > 14) { const [dx, dy] = steer(m, me, m.spot.x, m.spot.y); return { dx, dy, sneak: false }; }
+      return { dx: 0, dy: 0, sneak: true };
+    },
+  };
+
+  function make(gid, title, color) {
+    let running = false, raf = null, inst = null, acc = 0, last = 0, bots = [], over = 0, snap = null, keys = {}, myId = 'me', frame = 0, listS = null;
+    const BLOCK = new Set(['Space', 'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight']);
+    function setup() {
+      let myCol = -1; try { myCol = (JSON.parse(localStorage.getItem('arcade_settings') || '{}').col); } catch (e) {} if (!Number.isInteger(myCol)) myCol = -1;
+      let name = 'YOU'; try { name = localStorage.getItem('arcadeName') || 'YOU'; } catch (e) {}
+      let players, settings;
+      if (gid === 'ctf') { players = [{ id: 'me', name, team: 0, col: myCol }, { id: 'b1', name: 'BOT ALEX', team: 0 }, { id: 'b2', name: 'BOT SAM', team: 1 }, { id: 'b3', name: 'BOT JO', team: 1 }]; settings = { size: 2, caps: 3 }; bots = [{ id: 'b1', role: 'def' }, { id: 'b2', role: 'atk' }, { id: 'b3', role: 'def' }]; }
+      else if (gid === 'zombie') { players = [{ id: 'me', name, team: 0, col: myCol }, { id: 'b1', name: 'BOT ALEX', team: 0 }, { id: 'b2', name: 'BOT SAM', team: 0 }]; settings = { diff: 1 }; bots = [{ id: 'b1' }, { id: 'b2' }]; }
+      else if (gid === 'party') { myId = 1; players = [{ id: 1, name, team: 0, col: myCol }, { id: 2, name: 'BOT ALEX', team: 0 }, { id: 3, name: 'BOT SAM', team: 0 }, { id: 4, name: 'BOT JO', team: 0 }]; settings = { list: ['react', 'mash', 'dodge', 'snake'] }; bots = [{ id: 2 }, { id: 3 }, { id: 4 }]; }
+      else { players = [{ id: 'me', name, team: 0, col: myCol }, { id: 'b1', name: 'BOT ALEX', team: 0 }, { id: 'b2', name: 'BOT SAM', team: 0 }, { id: 'b3', name: 'BOT JO', team: 0 }]; settings = { rounds: 4, time: 60 }; bots = [{ id: 'b1' }, { id: 'b2' }, { id: 'b3' }]; }
+      bots.forEach((b, i) => { b.mem = {}; b.f = i * 17; b.n = i; });
+      if (gid !== 'party') myId = 'me'; listS = settings.list || null;
+      const env = { host: true, spectator: false, me: myId, players, settings, seed: (Math.random() * 1e9) | 0, keys, match: null, emit: e => { if (inst && !e.p) inst.onEvent(e); } };
+      inst = OnlineGames[gid].create(env); over = 0; snap = null; frame = 0;
+    }
+    function tick() {
+      frame++; inst.onInput(myId, inst.localInput());
+      if (frame % 2 === 0 || !snap) snap = inst.snapshot();
+      if (snap && listS) snap.list = listS;
+      bots.forEach(b => inst.onInput(b.id, BRAIN[gid](b, snap)));
+      inst.update(); if (inst.isOver()) over++; else over = 0;
+    }
+    function loop(ts) {
+      if (!running) return; raf = requestAnimationFrame(loop);
+      acc += Math.min(0.05, (ts - last) / 1000 || 0); last = ts; while (acc >= 1 / 60) { tick(); acc -= 1 / 60; }
+      inst.draw();
+      ctx.textAlign = 'left'; ctx.font = '10px monospace'; ctx.fillStyle = 'rgba(255,255,255,0.35)'; ctx.fillText('ESC = menu' + (over > 60 ? '    ENTER = play again' : ''), 10, 392);
+    }
+    function onKey(e) {
+      if (BLOCK.has(e.code)) e.preventDefault(); keys[e.code] = true;
+      if (e.code === 'Escape') { stop(); showMenu(); return; }
+      if (e.code === 'Enter' && over > 60) setup();
+    }
+    function onUp(e) { keys[e.code] = false; }
+    function onBlur() { for (const k in keys) keys[k] = false; }
+    function stop() {
+      running = false; if (raf) cancelAnimationFrame(raf); raf = null; if (inst && inst.destroy) { try { inst.destroy(); } catch (e) {} } inst = null;
+      document.removeEventListener('keydown', onKey); document.removeEventListener('keyup', onUp); window.removeEventListener('blur', onBlur);
+    }
+    function start() {
+      stop(); if (typeof hideTouchControls === 'function') hideTouchControls(); keys = {}; setup(); running = true;
+      document.addEventListener('keydown', onKey); document.addEventListener('keyup', onUp); window.addEventListener('blur', onBlur);
+      last = performance.now(); acc = 0; raf = requestAnimationFrame(loop);
+    }
+    return { start, stop };
+  }
+  return { make };
+})();
+const CtfOffline = OfflinePlay.make('ctf'), PartyOffline = OfflinePlay.make('party'), ZombieOffline = OfflinePlay.make('zombie'), LightsOffline = OfflinePlay.make('lights');
 
 </script>
   <script>
